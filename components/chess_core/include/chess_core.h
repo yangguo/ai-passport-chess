@@ -19,7 +19,11 @@ typedef enum chess_error {
   CHESS_ERR_BUFFER_TOO_SMALL = 3,
   CHESS_ERR_ILLEGAL_MOVE = 4,
   CHESS_ERR_NO_CLAIM = 5,
-  CHESS_ERR_GAME_OVER = 6
+  CHESS_ERR_GAME_OVER = 6,
+  CHESS_ERR_CORRUPT = 7,
+  CHESS_ERR_UNKNOWN_VERSION = 8,
+  CHESS_ERR_NO_SAVE = 9,
+  CHESS_ERR_NO_SEQ = 10
 } chess_error;
 
 typedef enum chess_color {
