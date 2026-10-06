@@ -10,6 +10,12 @@
  *   always kill the child on detach/quit, always read with timeout.
  * Board alphabet: white RNBQKBN + '*' pawn, black rnbqkbn + '+'
  * pawn, '.' empty, rank 8 first. Anything else is a desync.
+ *
+ * Transport note: the engine never flushes except per newline, so a
+ * pipe keeps every board print stuck in its block buffer (observed:
+ * 120 s reads with zero bytes). Spawn uses a pty in raw mode instead:
+ * the engine then sees a tty, line-buffers, and every byte arrives
+ * untranslated. Never EOF the child side; always kill on detach.
  */
 #ifndef CHESS_ENGINE_H
 #define CHESS_ENGINE_H
@@ -26,8 +32,7 @@
 
 typedef struct chess_engine {
   pid_t pid;
-  int to_child;
-  int from_child;
+  int fd; /* pty master, bidirectional */
   bool live;
 } chess_engine;
 

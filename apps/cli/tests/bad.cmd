@@ -4,5 +4,4 @@ boguscmd
 play
 moves z9
 claim e2e9
-ai
 quit

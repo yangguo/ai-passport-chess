@@ -61,12 +61,17 @@ if(SH_BIN)
     COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
       ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/bad.cmd
       "error illegal" "error bad-uci" "error unknown-command"
-      "error no-engine"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   add_test(NAME cli_promo
     COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
       ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/promo.cmd
       "b7b8n" "ok b7b8n" "1N2k3"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  # No-engine gate: must not depend on the ambient environment.
+  add_test(NAME cli_noengine
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_noenv.sh
+      ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/noengine.cmd
+      "error no-engine"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   # Live engine test: needs a console engine binary (see
   # third_party/mcu-max/SOURCES.md). Opt-in via CHESS_ENGINE_BIN.

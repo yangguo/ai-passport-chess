@@ -6,7 +6,13 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <util.h>
+#else
+#include <pty.h>
+#endif
 
 #include "chess_core.h"
 #include "chess_engine.h"
@@ -207,39 +213,29 @@ int chess_engine_try_apply(const chess_position *pos, chess_move m,
 }
 
 int chess_engine_spawn(chess_engine *e, const char *path) {
-  int to_child[2];
-  int from_child[2];
   pid_t pid;
+  int fd = -1;
   if (e == NULL || path == NULL) {
     return -1;
   }
   e->live = false;
-  if (pipe(to_child) != 0 || pipe(from_child) != 0) {
-    return -1;
-  }
-  pid = fork();
+  pid = forkpty(&fd, NULL, NULL, NULL);
   if (pid < 0) {
-    close(to_child[0]);
-    close(to_child[1]);
-    close(from_child[0]);
-    close(from_child[1]);
     return -1;
   }
   if (pid == 0) {
-    dup2(to_child[0], STDIN_FILENO);
-    dup2(from_child[1], STDOUT_FILENO);
-    close(to_child[0]);
-    close(to_child[1]);
-    close(from_child[0]);
-    close(from_child[1]);
+    /* Raw slave: no echo (else our input pollutes reads), no
+     * output postprocessing (else \n becomes \r\n). */
+    struct termios t;
+    if (tcgetattr(STDIN_FILENO, &t) == 0) {
+      cfmakeraw(&t);
+      tcsetattr(STDIN_FILENO, TCSANOW, &t);
+    }
     execl(path, path, (char *)NULL);
     _exit(127);
   }
-  close(to_child[0]);
-  close(from_child[1]);
   e->pid = pid;
-  e->to_child = to_child[1];
-  e->from_child = from_child[0];
+  e->fd = fd;
   e->live = true;
   return 0;
 }
@@ -253,14 +249,14 @@ int chess_engine_send(chess_engine *e, const char *line) {
   p = (line == NULL) ? "" : line;
   left = strlen(p);
   while (left > 0) {
-    ssize_t w = write(e->to_child, p, left);
+    ssize_t w = write(e->fd, p, left);
     if (w <= 0) {
       return -1;
     }
     p += (size_t)w;
     left -= (size_t)w;
   }
-  if (write(e->to_child, "\n", 1) != 1) {
+  if (write(e->fd, "\n", 1) != 1) {
     return -1;
   }
   return 0;
@@ -276,13 +272,13 @@ int chess_engine_read_board(chess_engine *e, char text[80]) {
     struct timeval deadline;
     ssize_t r;
     FD_ZERO(&set);
-    FD_SET(e->from_child, &set);
+    FD_SET(e->fd, &set);
     deadline.tv_sec = CHESS_ENGINE_READ_TIMEOUT_SEC;
     deadline.tv_usec = 0;
-    if (select(e->from_child + 1, &set, NULL, NULL, &deadline) <= 0) {
+    if (select(e->fd + 1, &set, NULL, NULL, &deadline) <= 0) {
       return -1; /* timeout or error: caller kills the child */
     }
-    r = read(e->from_child, text + got, CHESS_ENGINE_BOARD_LEN - got);
+    r = read(e->fd, text + got, CHESS_ENGINE_BOARD_LEN - got);
     if (r <= 0) {
       return -1; /* EOF or crash */
     }
@@ -299,6 +295,5 @@ void chess_engine_kill(chess_engine *e) {
   e->live = false;
   kill(e->pid, SIGKILL);
   waitpid(e->pid, NULL, 0);
-  close(e->to_child);
-  close(e->from_child);
+  close(e->fd);
 }
