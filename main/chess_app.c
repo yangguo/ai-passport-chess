@@ -478,8 +478,9 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     render_all();
 }
 
-void chess_app_button(bsp_btn_t btn, bsp_btn_ev_t ev) {
+void chess_app_button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
     input_event_t in;
+    (void)user;
     if (s_queue == NULL) {
         return;
     }

@@ -14,6 +14,6 @@
 void chess_app_start(void);
 
 /* ISR-safe button entry for bsp_button_init: enqueue only. */
-void chess_app_button(bsp_btn_t btn, bsp_btn_ev_t ev);
+void chess_app_button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user);
 
 #endif /* CHESS_APP_H */

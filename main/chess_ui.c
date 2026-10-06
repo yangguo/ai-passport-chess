@@ -27,7 +27,7 @@ static lv_obj_t *add_label(lv_obj_t *parent, const char *text, int y,
                            const lv_font_t *font, uint32_t color) {
     lv_obj_t *label = lv_label_create(parent);
     lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_text_color(label, color, 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_label_set_text(label, text);
     lv_obj_set_width(label, 240);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
