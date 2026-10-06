@@ -271,6 +271,23 @@ chess_error chess_position_from_fen(chess_position *out, const char *fen) {
   if (err != CHESS_OK) {
     return err;
   }
+  /* Unreachable checks (needs is_attacked, available since Task 3):
+   * both sides checked, or the side not to move checked. */
+  {
+    bool white_checked =
+        chess_is_attacked(&pos, pos.white_king, CHESS_BLACK);
+    bool black_checked =
+        chess_is_attacked(&pos, pos.black_king, CHESS_WHITE);
+    if (white_checked && black_checked) {
+      return CHESS_ERR_BAD_FEN;
+    }
+    if (pos.side_to_move == CHESS_WHITE && black_checked) {
+      return CHESS_ERR_BAD_FEN;
+    }
+    if (pos.side_to_move == CHESS_BLACK && white_checked) {
+      return CHESS_ERR_BAD_FEN;
+    }
+  }
   *out = pos;
   return CHESS_OK;
 }

@@ -193,12 +193,259 @@ static void test_null_and_small_buffer(void) {
   }
 }
 
+/* ---- Task 3 RED: move generation (UCI sets), attacks, make/unmake ----
+ * Expected to FAIL to compile: chess_move/chess_generate_legal/etc.
+ * do not exist yet. */
+
+static void move_to_uci(chess_move m, char out[6]) {
+  static const char promos[] = "xpnbrqk";
+  out[0] = (char)('a' + m.from % 8u);
+  out[1] = (char)('1' + m.from / 8u);
+  out[2] = (char)('a' + m.to % 8u);
+  out[3] = (char)('1' + m.to / 8u);
+  if (m.promotion == CHESS_EMPTY) {
+    out[4] = '\0';
+  } else {
+    out[4] = promos[m.promotion];
+    out[5] = '\0';
+  }
+}
+
+/* Exact set equality: counts match and every expected UCI is present
+ * (the generator must never emit duplicates). */
+static void check_move_set(const char *fen, const char *const *expected,
+                           size_t nexp) {
+  chess_position pos;
+  chess_move moves[CHESS_MAX_MOVES];
+  size_t count = 0;
+  size_t i;
+  char uci[6];
+
+  CHECK(chess_position_from_fen(&pos, fen) == CHESS_OK);
+  CHECK(chess_generate_legal(&pos, moves, CHESS_MAX_MOVES, &count) ==
+        CHESS_OK);
+  if (count != nexp) {
+    printf("FAIL %s:%d: %s: got %zu moves, want %zu\n", __FILE__, __LINE__,
+           fen, count, nexp);
+    failures++;
+    return;
+  }
+  for (i = 0; i < nexp; i++) {
+    size_t j;
+    int found = 0;
+    for (j = 0; j < count; j++) {
+      move_to_uci(moves[j], uci);
+      if (strcmp(uci, expected[i]) == 0) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      printf("FAIL %s:%d: %s: missing %s\n", __FILE__, __LINE__, fen,
+             expected[i]);
+      failures++;
+    }
+  }
+}
+
+static void test_startpos_move_set(void) {
+  static const char *kWant[] = {
+    "a2a3", "a2a4", "b2b3", "b2b4", "c2c3", "c2c4", "d2d3", "d2d4",
+    "e2e3", "e2e4", "f2f3", "f2f4", "g2g3", "g2g4", "h2h3", "h2h4",
+    "b1a3", "b1c3", "g1f3", "g1h3",
+  };
+  check_move_set("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                 kWant, sizeof(kWant) / sizeof(kWant[0]));
+}
+
+/* White Re2 pinned against Ke1 by black Re8: rook must stay on the
+ * e-file, king keeps its four open squares. */
+static void test_pin_move_set(void) {
+  static const char *kWant[] = {
+    "e1d1", "e1f1", "e1d2", "e1f2",
+    "e2e3", "e2e4", "e2e5", "e2e6", "e2e7", "e2e8",
+  };
+  check_move_set("4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_bishop_move_set(void) {
+  static const char *kWant[] = {
+    "c1b2", "c1a3", "c1d2", "c1e3", "c1f4", "c1g5", "c1h6",
+    "e1d1", "e1d2", "e1e2", "e1f1", "e1f2",
+  };
+  check_move_set("4k3/8/8/8/8/8/8/2B1K3 w - - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_knight_move_set(void) {
+  static const char *kWant[] = {
+    "f3d4", "f3e5", "f3g5", "f3h4", "f3h2", "f3g1", "f3d2",
+    "e1d1", "e1d2", "e1e2", "e1f1", "e1f2",
+  };
+  check_move_set("4k3/8/8/8/8/5N2/8/4K3 w - - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_is_attacked(void) {
+  chess_position pos;
+
+  /* Black pawn on d5 hits c4(26)/e4(28), not d4(27). */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/3p4/8/8/8/4K3 w - - 0 1") ==
+        CHESS_OK);
+  CHECK(chess_is_attacked(&pos, 26, CHESS_BLACK));
+  CHECK(chess_is_attacked(&pos, 28, CHESS_BLACK));
+  CHECK(!chess_is_attacked(&pos, 27, CHESS_BLACK));
+  CHECK(!chess_is_attacked(&pos, 26, CHESS_WHITE));
+
+  /* Knight attacks regardless of occupancy: Nf3 hits own Ke1. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/8/8/5N2/8/4K3 w - - 0 1") ==
+        CHESS_OK);
+  CHECK(chess_is_attacked(&pos, 27, CHESS_WHITE)); /* d4 */
+  CHECK(chess_is_attacked(&pos, 4, CHESS_WHITE)); /* own king e1 */
+  CHECK(!chess_is_attacked(&pos, 4, CHESS_BLACK));
+
+  /* King adjacency: black Kf3 hits e2(12), not e1. */
+  CHECK(chess_position_from_fen(&pos, "8/8/8/8/8/5k2/8/4K3 w - - 0 1") ==
+        CHESS_OK);
+  CHECK(chess_is_attacked(&pos, 12, CHESS_BLACK));
+  CHECK(!chess_is_attacked(&pos, 4, CHESS_BLACK));
+
+  /* Sliders through the pin: Re8 hits e7/e2, not d2; Re2 hits e8. */
+  CHECK(chess_position_from_fen(&pos, "4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1") ==
+        CHESS_OK);
+  CHECK(chess_is_attacked(&pos, 52, CHESS_BLACK)); /* e7 */
+  CHECK(chess_is_attacked(&pos, 12, CHESS_BLACK)); /* e2 */
+  CHECK(!chess_is_attacked(&pos, 11, CHESS_BLACK)); /* d2 */
+  CHECK(chess_is_attacked(&pos, 60, CHESS_WHITE)); /* e8 */
+  CHECK(chess_is_attacked(&pos, 3, CHESS_WHITE)); /* d1, by Ke1 */
+
+  /* Out-of-range square is never attacked. */
+  CHECK(!chess_is_attacked(&pos, 64, CHESS_WHITE));
+}
+
+static void test_make_unmake_round_trip(void) {
+  static const char *kFens[] = {
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1",
+    "4k3/8/8/8/8/5N2/8/4K3 w - - 0 1",
+  };
+  size_t f;
+
+  for (f = 0; f < sizeof(kFens) / sizeof(kFens[0]); f++) {
+    chess_position pos;
+    chess_move moves[CHESS_MAX_MOVES];
+    size_t count = 0;
+    size_t i;
+    CHECK(chess_position_from_fen(&pos, kFens[f]) == CHESS_OK);
+    CHECK(chess_generate_legal(&pos, moves, CHESS_MAX_MOVES, &count) ==
+          CHESS_OK);
+    for (i = 0; i < count; i++) {
+      chess_position before = pos;
+      chess_undo undo;
+      CHECK(chess_make(&pos, moves[i], &undo) == CHESS_OK);
+      chess_unmake(&pos, &undo);
+      if (memcmp(&pos, &before, sizeof(pos)) != 0) {
+        char uci[6];
+        move_to_uci(moves[i], uci);
+        printf("FAIL %s:%d: %s: %s not reversible\n", __FILE__, __LINE__,
+               kFens[f], uci);
+        failures++;
+      }
+    }
+  }
+}
+
+static void test_double_push_state(void) {
+  chess_position pos;
+  chess_move e4 = {12, 28, CHESS_EMPTY}; /* e2(12) -> e4(28) */
+  chess_undo undo;
+  chess_move replies[CHESS_MAX_MOVES];
+  size_t count = 0;
+
+  CHECK(chess_position_from_fen(
+            &pos, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") ==
+        CHESS_OK);
+  CHECK(chess_make(&pos, e4, &undo) == CHESS_OK);
+  CHECK(pos.side_to_move == CHESS_BLACK);
+  CHECK(pos.ep_square == 20); /* e3 */
+  CHECK(pos.halfmove_clock == 0);
+  CHECK(pos.fullmove_number == 1);
+  CHECK(pos.board[12].type == CHESS_EMPTY);
+  CHECK(pos.board[28].type == CHESS_PAWN &&
+        pos.board[28].color == CHESS_WHITE);
+  /* Black still has all 20 replies. */
+  CHECK(chess_generate_legal(&pos, replies, CHESS_MAX_MOVES, &count) ==
+        CHESS_OK);
+  CHECK(count == 20);
+  chess_unmake(&pos, &undo);
+  CHECK(pos.side_to_move == CHESS_WHITE);
+  CHECK(pos.ep_square == CHESS_NO_SQUARE);
+}
+
+static void test_illegal_make_rejected(void) {
+  chess_position pos;
+  chess_position before;
+  chess_move bad = {12, 36, CHESS_EMPTY}; /* e2e5: pawn cannot jump */
+  chess_undo undo;
+
+  CHECK(chess_position_from_fen(
+            &pos, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") ==
+        CHESS_OK);
+  before = pos;
+  CHECK(chess_make(&pos, bad, &undo) != CHESS_OK);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+
+  /* Same-square non-move and missing undo are also rejected. */
+  bad.from = 12;
+  bad.to = 12;
+  CHECK(chess_make(&pos, bad, &undo) != CHESS_OK);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+
+  {
+    chess_move e4 = {12, 28, CHESS_EMPTY};
+    CHECK(chess_make(&pos, e4, NULL) == CHESS_ERR_NULL);
+    CHECK(chess_make(NULL, e4, &undo) == CHESS_ERR_NULL);
+    CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+  }
+  /* NULL undo on unmake is a documented no-op, never a crash. */
+  chess_unmake(&pos, NULL);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+}
+
+/* Check-based FEN rejection (needs is_attacked, new in Task 3). */
+static void test_check_position_fens(void) {
+  chess_position pos;
+  char buf[CHESS_FEN_MAX];
+
+  /* Both kings in check: impossible. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/1B6/8/8/4r3/4K3 w - - 0 1") !=
+        CHESS_OK);
+  /* Non-mover in check: black checked while white moves. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/1B6/8/8/8/R3K3 w - - 0 1") !=
+        CHESS_OK);
+  /* Mover in check is a legal game position. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/1B6/8/8/8/R3K3 b - - 0 1") ==
+        CHESS_OK);
+  CHECK(chess_position_to_fen(&pos, buf, sizeof(buf)) == CHESS_OK);
+  CHECK(strcmp(buf, "4k3/8/8/1B6/8/8/8/R3K3 b - - 0 1") == 0);
+}
+
 int main(void) {
   test_startpos_fields();
   test_bad_fen_leaves_output_untouched();
   test_fen_round_trip();
   test_rejects_bad_fens();
   test_null_and_small_buffer();
+  test_startpos_move_set();
+  test_pin_move_set();
+  test_bishop_move_set();
+  test_knight_move_set();
+  test_is_attacked();
+  test_make_unmake_round_trip();
+  test_double_push_state();
+  test_illegal_make_rejected();
+  test_check_position_fens();
 
   if (failures == 0) {
     printf("PASS: all test_core checks passed\n");

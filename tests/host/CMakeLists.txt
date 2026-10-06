@@ -13,13 +13,29 @@ if(CHESS_SANITIZERS)
 endif()
 
 set(CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_core)
-
-add_executable(test_core
-  test_core.c
+set(CORE_SOURCES
   ${CORE_DIR}/chess_position.c
   ${CORE_DIR}/chess_fen.c
+  ${CORE_DIR}/chess_moves.c
 )
+
+add_executable(test_core test_core.c ${CORE_SOURCES})
 target_include_directories(test_core PRIVATE ${CORE_DIR}/include)
+
+add_executable(perft perft_main.c ${CORE_SOURCES})
+target_include_directories(perft PRIVATE ${CORE_DIR}/include)
 
 enable_testing()
 add_test(NAME core COMMAND test_core)
+
+# Startpos perft gate (Task 3): no castling/ep-capture/promotion occurs
+# within 4 plies, so the ordinary-move generator must hit exact counts.
+set(START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+add_test(NAME perft_start_d1 COMMAND perft --fen "${START_FEN}" --depth 1)
+add_test(NAME perft_start_d2 COMMAND perft --fen "${START_FEN}" --depth 2)
+add_test(NAME perft_start_d3 COMMAND perft --fen "${START_FEN}" --depth 3)
+add_test(NAME perft_start_d4 COMMAND perft --fen "${START_FEN}" --depth 4)
+set_tests_properties(perft_start_d1 PROPERTIES PASS_REGULAR_EXPRESSION "^20")
+set_tests_properties(perft_start_d2 PROPERTIES PASS_REGULAR_EXPRESSION "^400")
+set_tests_properties(perft_start_d3 PROPERTIES PASS_REGULAR_EXPRESSION "^8902")
+set_tests_properties(perft_start_d4 PROPERTIES PASS_REGULAR_EXPRESSION "^197281")
