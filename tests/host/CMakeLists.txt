@@ -25,12 +25,20 @@ target_include_directories(test_core PRIVATE ${CORE_DIR}/include)
 add_executable(test_game test_game.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c)
 target_include_directories(test_game PRIVATE ${CORE_DIR}/include)
 
+set(MODEL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_ui_model)
+# NOTE (RED): chess_ui_model.c does not exist yet; link must fail for now.
+add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
+  ${MODEL_DIR}/chess_ui_model.c)
+target_include_directories(test_ui_model PRIVATE
+  ${CORE_DIR}/include ${MODEL_DIR}/include)
+
 add_executable(perft perft_main.c ${CORE_SOURCES})
 target_include_directories(perft PRIVATE ${CORE_DIR}/include)
 
 enable_testing()
 add_test(NAME core COMMAND test_core)
 add_test(NAME game COMMAND test_game)
+add_test(NAME ui_model COMMAND test_ui_model)
 
 # Startpos perft gate (Task 3): no castling/ep-capture/promotion occurs
 # within 4 plies, so the ordinary-move generator must hit exact counts.
