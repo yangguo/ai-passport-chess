@@ -22,11 +22,15 @@ set(CORE_SOURCES
 add_executable(test_core test_core.c ${CORE_SOURCES})
 target_include_directories(test_core PRIVATE ${CORE_DIR}/include)
 
+add_executable(test_game test_game.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c)
+target_include_directories(test_game PRIVATE ${CORE_DIR}/include)
+
 add_executable(perft perft_main.c ${CORE_SOURCES})
 target_include_directories(perft PRIVATE ${CORE_DIR}/include)
 
 enable_testing()
 add_test(NAME core COMMAND test_core)
+add_test(NAME game COMMAND test_game)
 
 # Startpos perft gate (Task 3): no castling/ep-capture/promotion occurs
 # within 4 plies, so the ordinary-move generator must hit exact counts.

@@ -17,7 +17,9 @@ typedef enum chess_error {
   CHESS_ERR_NULL = 1,
   CHESS_ERR_BAD_FEN = 2,
   CHESS_ERR_BUFFER_TOO_SMALL = 3,
-  CHESS_ERR_ILLEGAL_MOVE = 4
+  CHESS_ERR_ILLEGAL_MOVE = 4,
+  CHESS_ERR_NO_CLAIM = 5,
+  CHESS_ERR_GAME_OVER = 6
 } chess_error;
 
 typedef enum chess_color {
@@ -124,5 +126,73 @@ chess_error chess_make(chess_position *pos, chess_move move, chess_undo *undo);
 
 /* Revert a move made with chess_make. NULL arguments are a no-op. */
 void chess_unmake(chess_position *pos, const chess_undo *undo);
+
+/* ---- Task 5: games, repetition, outcomes ----
+ * Repetition history is owned exclusively by chess_game_apply; perft and
+ * raw make/unmake never touch it. A fresh import starts a fresh history
+ * (unknown prior history must be reported, never invented). */
+
+typedef enum chess_status {
+  CHESS_STATUS_ONGOING = 0,
+  CHESS_STATUS_INVALID = 1,
+  CHESS_STATUS_CHECKMATE_WHITE_WINS = 2,
+  CHESS_STATUS_CHECKMATE_BLACK_WINS = 3,
+  CHESS_STATUS_STALEMATE = 4,
+  CHESS_STATUS_DRAW_DEAD = 5,
+  CHESS_STATUS_DRAW_FIVEFOLD = 6,
+  CHESS_STATUS_DRAW_SEVENTY_FIVE = 7,
+  CHESS_STATUS_DRAW_CLAIMED_THREEFOLD = 8,
+  CHESS_STATUS_DRAW_CLAIMED_FIFTY = 9,
+  CHESS_STATUS_DRAW_AGREED = 10,
+  CHESS_STATUS_RESIGN_WHITE_WINS = 11,
+  CHESS_STATUS_RESIGN_BLACK_WINS = 12
+} chess_status;
+
+/* Initial position plus 150 halfmoves: the 75-move rule ends the game
+ * before more history could ever be needed (5134 bytes of keys). */
+#define CHESS_HISTORY_MAX 151u
+
+typedef struct chess_game {
+  chess_position position;
+  uint8_t keys[CHESS_HISTORY_MAX][34];
+  uint16_t history_len; /* >= 1 once initialized */
+  bool initialized;
+  /* Set once by a claim/agreement/resignation; ends the game. */
+  chess_status decided;
+} chess_game;
+
+/* Canonical 34-byte repetition key: 32 nibble-packed board bytes
+ * (a1 first), one side+rights byte, one ep byte (file when a legal
+ * ep capture exists, 0xFF otherwise). Counters never enter the key. */
+void chess_position_key(const chess_position *pos, uint8_t key[34]);
+
+/* Start a game from a validated position, or parse FEN first.
+ * Failures leave *game untouched. */
+chess_error chess_game_init(chess_game *game, const chess_position *pos);
+chess_error chess_game_init_fen(chess_game *game, const char *fen);
+
+/* Play a move: validates exactly like chess_make, then extends the
+ * repetition window (resetting it past pawn moves, captures and
+ * castling-rights changes). Rejected on terminal games
+ * (CHESS_ERR_GAME_OVER) or illegal moves; both leave the game
+ * untouched. */
+chess_error chess_game_apply(chess_game *game, chess_move move);
+
+/* Current outcome. Checkmate/stalemate first, then the supported dead
+ * positions, fivefold repetition, and the 75-move rule; checkmate
+ * outranks the move-count draws. NULL or uninitialized games report
+ * CHESS_STATUS_INVALID. */
+chess_status chess_game_status(const chess_game *game);
+
+/* Claim a threefold/fifty-move draw for the current position (NULL) or
+ * for the position after one intended move (validated; illegal intent
+ * is CHESS_ERR_ILLEGAL_MOVE). Nothing claimable is CHESS_ERR_NO_CLAIM.
+ * A granted claim ends the game. */
+chess_error chess_game_claim_draw(chess_game *game, const chess_move *intended);
+
+/* Mutual agreement and resignation. Game results, not move attributes;
+ * both end an ongoing game, both are rejected once it is over. */
+chess_error chess_game_agree_draw(chess_game *game);
+chess_error chess_game_resign(chess_game *game, chess_color color);
 
 #endif /* CHESS_CORE_H */
