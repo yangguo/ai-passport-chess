@@ -73,6 +73,9 @@ static void test_fen_round_trip(void) {
     /* No castling, nonzero counters. */
     "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 99 150",
+    "4k3/8/8/8/8/8/8/4K2R w K - 0 1",
+    "6k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+    "4k3/1P6/8/8/8/8/8/4K3 w - - 0 1",
   };
   size_t i;
 
@@ -329,6 +332,10 @@ static void test_make_unmake_round_trip(void) {
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
     "4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1",
     "4k3/8/8/8/8/5N2/8/4K3 w - - 0 1",
+    "4k3/8/8/8/8/8/8/R3K3 w Q - 0 1",
+    "6k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+    "4k3/1P6/8/8/8/8/8/4K3 w - - 0 1",
+    "4k3/8/8/8/8/8/1p6/R3K3 b - - 0 1",
   };
   size_t f;
 
@@ -431,6 +438,247 @@ static void test_check_position_fens(void) {
   CHECK(strcmp(buf, "4k3/8/8/1B6/8/8/8/R3K3 b - - 0 1") == 0);
 }
 
+/* ---- Task 4 RED: castling, en-passant capture, promotions ----
+ * Positive sets must FAIL until specials are generated; the
+ * through-check negative set already holds and stays green. */
+
+static void test_castle_through_check_blocked(void) {
+  /* Black Bc4 hits f1: short castle unavailable, everything else stays. */
+  static const char *kWant[] = {
+    "e1d1", "e1d2", "e1f2",
+    "h1g1", "h1f1", "h1h2", "h1h3", "h1h4", "h1h5", "h1h6", "h1h7", "h1h8",
+  };
+  check_move_set("4k3/8/8/8/2b5/8/8/4K2R w K - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_castle_kingside_allowed(void) {
+  static const char *kWant[] = {
+    "e1d1", "e1d2", "e1e2", "e1f2", "e1f1", "e1g1",
+    "h1g1", "h1f1", "h1h2", "h1h3", "h1h4", "h1h5", "h1h6", "h1h7", "h1h8",
+  };
+  check_move_set("4k3/8/8/8/8/8/8/4K2R w K - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_castle_queenside_allowed(void) {
+  static const char *kWant[] = {
+    "e1d1", "e1d2", "e1e2", "e1f2", "e1f1", "e1c1",
+    "a1b1", "a1c1", "a1d1", "a1a2", "a1a3", "a1a4", "a1a5", "a1a6", "a1a7",
+    "a1a8",
+  };
+  check_move_set("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_castle_state(void) {
+  chess_position pos;
+  chess_position before;
+  chess_move oo = {4, 6, CHESS_EMPTY}; /* e1 -> g1 */
+  chess_undo undo;
+
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/8/8/8/8/4K2R w K - 0 1") ==
+        CHESS_OK);
+  before = pos;
+  CHECK(chess_make(&pos, oo, &undo) == CHESS_OK);
+  CHECK(pos.board[6].type == CHESS_KING); /* king on g1 */
+  CHECK(pos.board[5].type == CHESS_ROOK && /* rook on f1 */
+        pos.board[5].color == CHESS_WHITE);
+  CHECK(pos.board[4].type == CHESS_EMPTY && pos.board[7].type == CHESS_EMPTY);
+  CHECK(pos.castling == 0);
+  CHECK(pos.side_to_move == CHESS_BLACK);
+  CHECK(pos.white_king == 6);
+  chess_unmake(&pos, &undo);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+}
+
+static void test_rights_lost(void) {
+  chess_position pos;
+  chess_position before;
+  chess_move take = {9, 0, CHESS_EMPTY}; /* b2 -> a1 takes the corner rook */
+  chess_undo undo;
+
+  /* Corner capture clears the right immediately. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/8/8/8/1b6/R3K3 b Q - 0 1") ==
+        CHESS_OK);
+  before = pos;
+  CHECK(chess_make(&pos, take, &undo) == CHESS_OK);
+  CHECK(pos.castling == 0);
+  chess_unmake(&pos, &undo);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+  CHECK(pos.castling == CHESS_CASTLE_WQ);
+
+  /* King move clears both rights of its color. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/8/8/8/8/4K2R w K - 0 1") ==
+        CHESS_OK);
+  {
+    chess_move kf = {4, 5, CHESS_EMPTY}; /* e1 -> f1 */
+    CHECK(chess_make(&pos, kf, &undo) == CHESS_OK);
+    CHECK(pos.castling == 0);
+  }
+
+  /* Rook leaving its corner clears its own right. */
+  CHECK(chess_position_from_fen(&pos, "4k3/8/8/8/8/8/8/4K2R w K - 0 1") ==
+        CHESS_OK);
+  {
+    chess_move rh = {7, 15, CHESS_EMPTY}; /* h1 -> h2 */
+    CHECK(chess_make(&pos, rh, &undo) == CHESS_OK);
+    CHECK((pos.castling & CHESS_CASTLE_WK) == 0);
+  }
+}
+
+/* Capturing en passant onto d6 would uncover the e-file to Re8. */
+static void test_ep_pin(void) {
+  static const char *kWant[] = {
+    "e1d1", "e1d2", "e1e2", "e1f1", "e1f2", "e5e6",
+  };
+  check_move_set("4r1k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_ep_capture_allowed(void) {
+  static const char *kWant[] = {
+    "e1d1", "e1d2", "e1e2", "e1f1", "e1f2", "e5e6", "e5d6",
+  };
+  check_move_set("6k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_ep_state(void) {
+  chess_position pos;
+  chess_position before;
+  chess_move ep = {36, 43, CHESS_EMPTY}; /* e5(36) takes d6(43) e.p. */
+  chess_undo undo;
+
+  CHECK(chess_position_from_fen(&pos, "6k1/8/8/3pP3/8/8/8/4K3 w - d6 0 1") ==
+        CHESS_OK);
+  before = pos;
+  CHECK(chess_make(&pos, ep, &undo) == CHESS_OK);
+  CHECK(pos.board[43].type == CHESS_PAWN &&
+        pos.board[43].color == CHESS_WHITE);
+  CHECK(pos.board[36].type == CHESS_EMPTY);
+  CHECK(pos.board[35].type == CHESS_EMPTY); /* victim d5 gone */
+  CHECK(pos.ep_square == CHESS_NO_SQUARE);
+  CHECK(pos.halfmove_clock == 0);
+  chess_unmake(&pos, &undo);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+}
+
+static void test_promotion_push(void) {
+  static const char *kWant[] = {
+    "b7b8q", "b7b8r", "b7b8b", "b7b8n",
+    "e1d1", "e1d2", "e1e2", "e1f1", "e1f2",
+  };
+  check_move_set("4k3/1P6/8/8/8/8/8/4K3 w - - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_promotion_capture(void) {
+  /* b8 empty: quiet push and diagonal capture promote together. */
+  static const char *kWant[] = {
+    "b7b8q", "b7b8r", "b7b8b", "b7b8n",
+    "b7a8q", "b7a8r", "b7a8b", "b7a8n",
+    "e1d1", "e1d2", "e1e2", "e1f1", "e1f2",
+  };
+  check_move_set("r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1", kWant,
+                 sizeof(kWant) / sizeof(kWant[0]));
+}
+
+static void test_black_promotions(void) {
+  /* Quiet push only: b1 empty. */
+  static const char *kPush[] = {
+    "b2b1q", "b2b1r", "b2b1b", "b2b1n",
+    "e8d8", "e8d7", "e8e7", "e8f7", "e8f8",
+  };
+  /* Push plus capture of Ra1. */
+  static const char *kTake[] = {
+    "b2b1q", "b2b1r", "b2b1b", "b2b1n",
+    "b2a1q", "b2a1r", "b2a1b", "b2a1n",
+    "e8d8", "e8d7", "e8e7", "e8f7", "e8f8",
+  };
+  check_move_set("4k3/8/8/8/8/8/1p6/4K3 b - - 0 1", kPush,
+                 sizeof(kPush) / sizeof(kPush[0]));
+  check_move_set("4k3/8/8/8/8/8/1p6/R3K3 b - - 0 1", kTake,
+                 sizeof(kTake) / sizeof(kTake[0]));
+}
+
+static void test_promotion_state(void) {
+  chess_position pos;
+  chess_position before;
+  chess_move promo = {49, 57, CHESS_QUEEN}; /* b7 -> b8=Q */
+  chess_undo undo;
+
+  CHECK(chess_position_from_fen(&pos, "4k3/1P6/8/8/8/8/8/4K3 w - - 0 1") ==
+        CHESS_OK);
+  before = pos;
+  CHECK(chess_make(&pos, promo, &undo) == CHESS_OK);
+  CHECK(pos.board[57].type == CHESS_QUEEN &&
+        pos.board[57].color == CHESS_WHITE);
+  CHECK(pos.board[49].type == CHESS_EMPTY);
+  CHECK(pos.halfmove_clock == 0);
+  CHECK(pos.side_to_move == CHESS_BLACK);
+  chess_unmake(&pos, &undo);
+  CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+}
+
+/* ---- Task 4, step 4: seeded random-play properties ----
+ * Fixed seed, no I/O: every step checks make/unmake reversibility,
+ * structural validity, mover-king safety and FEN round-trip fidelity. */
+static uint32_t lcg_next(uint32_t *state) {
+  *state = *state * 1664525u + 1013904223u;
+  return *state >> 8;
+}
+
+static void test_seeded_random_properties(void) {
+  static const char *kStarts[] = {
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+  };
+  uint32_t rng = 0xC0FFEEu;
+  size_t g;
+
+  for (g = 0; g < sizeof(kStarts) / sizeof(kStarts[0]); g++) {
+    unsigned game;
+    for (game = 0; game < 20; game++) {
+      chess_position pos;
+      unsigned ply;
+      CHECK(chess_position_from_fen(&pos, kStarts[g]) == CHESS_OK);
+      for (ply = 0; ply < 100; ply++) {
+        chess_move moves[CHESS_MAX_MOVES];
+        size_t count = 0;
+        chess_move pick;
+        chess_position before;
+        chess_undo undo;
+        char fen[CHESS_FEN_MAX];
+        chess_position refen;
+        uint8_t ksq;
+        chess_color mover = pos.side_to_move;
+
+        CHECK(chess_generate_legal(&pos, moves, CHESS_MAX_MOVES, &count) ==
+              CHESS_OK);
+        if (count == 0) {
+          break; /* checkmate or stalemate: game over */
+        }
+        pick = moves[lcg_next(&rng) % count];
+        before = pos;
+        CHECK(chess_make(&pos, pick, &undo) == CHESS_OK);
+        /* Mover must not have left its own king in check. */
+        ksq = (mover == CHESS_WHITE) ? pos.white_king : pos.black_king;
+        CHECK(!chess_is_attacked(&pos, ksq, pos.side_to_move));
+        CHECK(chess_position_validate(&pos) == CHESS_OK);
+        /* FEN must survive a full export/import cycle byte-exact. */
+        CHECK(chess_position_to_fen(&pos, fen, sizeof(fen)) == CHESS_OK);
+        CHECK(chess_position_from_fen(&refen, fen) == CHESS_OK);
+        CHECK(memcmp(&pos, &refen, sizeof(pos)) == 0);
+        chess_unmake(&pos, &undo);
+        CHECK(memcmp(&pos, &before, sizeof(pos)) == 0);
+        CHECK(chess_make(&pos, pick, &undo) == CHESS_OK);
+      }
+    }
+  }
+}
+
 int main(void) {
   test_startpos_fields();
   test_bad_fen_leaves_output_untouched();
@@ -446,6 +694,19 @@ int main(void) {
   test_double_push_state();
   test_illegal_make_rejected();
   test_check_position_fens();
+  test_castle_through_check_blocked();
+  test_castle_kingside_allowed();
+  test_castle_queenside_allowed();
+  test_castle_state();
+  test_rights_lost();
+  test_ep_pin();
+  test_ep_capture_allowed();
+  test_ep_state();
+  test_promotion_push();
+  test_promotion_capture();
+  test_black_promotions();
+  test_promotion_state();
+  test_seeded_random_properties();
 
   if (failures == 0) {
     printf("PASS: all test_core checks passed\n");

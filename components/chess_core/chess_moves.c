@@ -1,9 +1,7 @@
-/* Task 3: ordinary moves with reversible execution.
- * Pseudo-legal generation (pawn pushes/captures without promotion,
- * knights, sliders, king steps) + own-king safety filter via internal
- * make/unmake. Castling, en-passant capture and promotions arrive in
- * Task 4; positions needing them never occur in the Task 3 fixtures,
- * and pawn pushes onto the last rank are withheld until Task 4. */
+/* Task 4: complete move generation with reversible execution.
+ * Pseudo-legal generation (pawn pushes/captures with Q/R/B/N promotions,
+ * en-passant capture, knights, sliders, king steps plus standard
+ * castling) + own-king safety filter via internal make/unmake. */
 #include "chess_core.h"
 #include "chess_core_internal.h"
 
@@ -135,6 +133,22 @@ static void push_pseudo(pseudo_list *list, uint8_t from, uint8_t to) {
   list->moves[list->count++] = m;
 }
 
+static void push_promotions(pseudo_list *list, uint8_t from, uint8_t to) {
+  static const chess_piece_type kinds[4] = {CHESS_QUEEN, CHESS_ROOK,
+                                            CHESS_BISHOP, CHESS_KNIGHT};
+  int i;
+  for (i = 0; i < 4; i++) {
+    chess_move m;
+    if (list->count >= CHESS_MAX_MOVES) {
+      return;
+    }
+    m.from = from;
+    m.to = to;
+    m.promotion = kinds[i];
+    list->moves[list->count++] = m;
+  }
+}
+
 static void gen_pawn(const chess_position *pos, unsigned sq, pseudo_list *out) {
   chess_color mover = pos->side_to_move;
   int f = file_of(sq);
@@ -152,7 +166,7 @@ static void gen_pawn(const chess_position *pos, unsigned sq, pseudo_list *out) {
   one = (unsigned)(tr * 8 + f);
   if (pos->board[one].type == CHESS_EMPTY) {
     if (tr == last) {
-      /* Promotion push: withheld until Task 4. */
+      push_promotions(out, (uint8_t)sq, (uint8_t)one);
     } else {
       push_pseudo(out, (uint8_t)sq, (uint8_t)one);
       if (r == start) {
@@ -167,10 +181,22 @@ static void gen_pawn(const chess_position *pos, unsigned sq, pseudo_list *out) {
     if (tf >= 0 && tf < 8) {
       chess_piece target = pos->board[(unsigned)(tr * 8 + tf)];
       if (target.type != CHESS_EMPTY && target.color != mover &&
-          !is_enemy_king(target, mover) && tr != last) {
-        push_pseudo(out, (uint8_t)sq, (uint8_t)(tr * 8 + tf));
+          !is_enemy_king(target, mover)) {
+        if (tr == last) {
+          push_promotions(out, (uint8_t)sq, (uint8_t)(tr * 8 + tf));
+        } else {
+          push_pseudo(out, (uint8_t)sq, (uint8_t)(tr * 8 + tf));
+        }
       }
-      /* Promotion captures and en-passant captures: Task 4. */
+    }
+  }
+  /* En-passant capture onto the live target square. */
+  if (pos->ep_square != CHESS_NO_SQUARE) {
+    int ef = file_of(pos->ep_square);
+    int er = rank_of(pos->ep_square);
+    int home = (mover == CHESS_WHITE) ? 4 : 3;
+    if (r == home && er == home + dir && (ef == f - 1 || ef == f + 1)) {
+      push_pseudo(out, (uint8_t)sq, pos->ep_square);
     }
   }
 }
@@ -221,6 +247,59 @@ static void gen_rays(const chess_position *pos, unsigned sq,
   }
 }
 
+/* Standard castling only: king e1/e8 with a corner rook of its color.
+ * The king's current, transit and landing squares must be unattacked;
+ * queenside b1/b8 must be empty but need not be unattacked. Rights
+ * alone are not enough: the king and rook must actually stand home. */
+static void gen_castle(const chess_position *pos, unsigned king_sq,
+                       pseudo_list *out) {
+  chess_color mover = pos->side_to_move;
+  chess_color enemy = (chess_color)(mover ^ 1u);
+  unsigned home;
+  uint8_t rights_k;
+  uint8_t rights_q;
+  unsigned rook_k;
+  unsigned rook_q;
+
+  if (mover == CHESS_WHITE) {
+    home = 4;
+    rights_k = CHESS_CASTLE_WK;
+    rights_q = CHESS_CASTLE_WQ;
+    rook_k = 7;
+    rook_q = 0;
+  } else {
+    home = 60;
+    rights_k = CHESS_CASTLE_BK;
+    rights_q = CHESS_CASTLE_BQ;
+    rook_k = 63;
+    rook_q = 56;
+  }
+  if (king_sq != home) {
+    return;
+  }
+  if ((pos->castling & rights_k) != 0u &&
+      pos->board[rook_k].type == CHESS_ROOK &&
+      pos->board[rook_k].color == mover &&
+      pos->board[home + 1].type == CHESS_EMPTY &&
+      pos->board[home + 2].type == CHESS_EMPTY &&
+      !chess_is_attacked(pos, (uint8_t)home, enemy) &&
+      !chess_is_attacked(pos, (uint8_t)(home + 1), enemy) &&
+      !chess_is_attacked(pos, (uint8_t)(home + 2), enemy)) {
+    push_pseudo(out, (uint8_t)home, (uint8_t)(home + 2));
+  }
+  if ((pos->castling & rights_q) != 0u &&
+      pos->board[rook_q].type == CHESS_ROOK &&
+      pos->board[rook_q].color == mover &&
+      pos->board[home - 1].type == CHESS_EMPTY &&
+      pos->board[home - 2].type == CHESS_EMPTY &&
+      pos->board[home - 3].type == CHESS_EMPTY &&
+      !chess_is_attacked(pos, (uint8_t)home, enemy) &&
+      !chess_is_attacked(pos, (uint8_t)(home - 1), enemy) &&
+      !chess_is_attacked(pos, (uint8_t)(home - 2), enemy)) {
+    push_pseudo(out, (uint8_t)home, (uint8_t)(home - 2));
+  }
+}
+
 static void gen_pseudo(const chess_position *pos, pseudo_list *out) {
   static const int knight_d[8][2] = {{1, 2}, {2, 1},  {2, -1}, {1, -2},
                                      {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2}};
@@ -254,8 +333,8 @@ static void gen_pseudo(const chess_position *pos, pseudo_list *out) {
       gen_rays(pos, sq, bishop_d, 4, out);
       break;
     case CHESS_KING:
-      /* Castling withheld until Task 4. */
       gen_steps(pos, sq, king_d, 8, out);
+      gen_castle(pos, sq, out);
       break;
     default:
       break;
@@ -305,9 +384,46 @@ void chess_make_unchecked(chess_position *pos, chess_move move,
   undo->castle_rook_from = CHESS_NO_SQUARE;
   undo->castle_rook_to = CHESS_NO_SQUARE;
 
-  pos->board[move.to] = mp;
+  /* En-passant capture: the victim sits beside the target square. */
+  if (mp.type == CHESS_PAWN && move.to == pos->ep_square &&
+      file_of(move.to) != file_of(move.from)) {
+    uint8_t victim =
+        (uint8_t)((int)move.to + (mover == CHESS_WHITE ? -8 : 8));
+    cp = pos->board[victim];
+    undo->captured = cp;
+    undo->capture_square = victim;
+    pos->board[victim].type = CHESS_EMPTY;
+    pos->board[victim].color = CHESS_WHITE;
+  }
+
+  if (move.promotion != CHESS_EMPTY) {
+    chess_piece placed;
+    placed.type = move.promotion;
+    placed.color = mover;
+    pos->board[move.to] = placed;
+  } else {
+    pos->board[move.to] = mp;
+  }
   pos->board[move.from].type = CHESS_EMPTY;
   pos->board[move.from].color = CHESS_WHITE;
+
+  /* Castling: a king stride of two carries the corner rook along. */
+  if (mp.type == CHESS_KING && (span == 2 || span == -2)) {
+    uint8_t rf;
+    uint8_t rt;
+    if (span == 2) {
+      rf = (uint8_t)((int)move.to + 1);
+      rt = (uint8_t)((int)move.to - 1);
+    } else {
+      rf = (uint8_t)((int)move.to - 2);
+      rt = (uint8_t)((int)move.to + 1);
+    }
+    undo->castle_rook_from = rf;
+    undo->castle_rook_to = rt;
+    pos->board[rt] = pos->board[rf];
+    pos->board[rf].type = CHESS_EMPTY;
+    pos->board[rf].color = CHESS_WHITE;
+  }
 
   if (mp.type == CHESS_KING) {
     if (mover == CHESS_WHITE) {

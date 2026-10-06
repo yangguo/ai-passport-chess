@@ -39,3 +39,15 @@ set_tests_properties(perft_start_d1 PROPERTIES PASS_REGULAR_EXPRESSION "^20")
 set_tests_properties(perft_start_d2 PROPERTIES PASS_REGULAR_EXPRESSION "^400")
 set_tests_properties(perft_start_d3 PROPERTIES PASS_REGULAR_EXPRESSION "^8902")
 set_tests_properties(perft_start_d4 PROPERTIES PASS_REGULAR_EXPRESSION "^197281")
+
+# Full perft gate over tests/perft/cases.json via the host-only Python
+# runner (the C core itself never parses JSON).
+find_program(PYTHON3_BIN python3)
+if(PYTHON3_BIN)
+  add_test(NAME perft_cases
+    COMMAND ${PYTHON3_BIN}
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/check_perft_cases.py
+      --perft ./perft
+      --cases ${CMAKE_CURRENT_SOURCE_DIR}/../perft/cases.json
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endif()
