@@ -27,7 +27,7 @@ add_executable(chess-cli
   ${CORE_DIR}/chess_moves.c
   ${CORE_DIR}/chess_game.c
   ${STORAGE_DIR}/chess_codec.c
-  ${AI_DIR}/chess_mcumax_adapter.c
+  ${AI_DIR}/chess_ai.c
   ${ENGINE_DIR}/mcu-max.c
 )
 target_include_directories(chess-cli PRIVATE

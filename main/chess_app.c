@@ -59,6 +59,11 @@ static chess_move s_last_move;
 static bool s_has_last_move;
 static chess_view s_view;
 static chess_save s_scratch;
+
+/* Forward declarations: input/render paths precede their helpers. */
+static const char *level_name(chess_ai_level level);
+static void after_move_applied(chess_move m);
+static void feed_model_moves(void);
 /* AI session (M2): human is always White in AI games for now. */
 static uint8_t s_mode;
 static chess_ai_level s_difficulty;
@@ -397,7 +402,6 @@ static bool drain_ai_results(void) {
     while (chess_ai_task_take_result(&res)) {
         bool was_awaiting;
         any = true;
-        bool was_awaiting;
         s_thinking = false;
         was_awaiting = s_cancel_await;
         s_cancel_await = false;

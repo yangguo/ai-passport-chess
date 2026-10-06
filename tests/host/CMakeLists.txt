@@ -31,7 +31,6 @@ set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mcu-max)
 set_source_files_properties(${ENGINE_DIR}/mcu-max.c PROPERTIES
   COMPILE_OPTIONS "-Wno-error")
 
-# NOTE (RED): chess_mcumax_adapter.c is still a placeholder.
 add_executable(test_ai_adapter
   test_ai_adapter.c
   ${CORE_SOURCES}
