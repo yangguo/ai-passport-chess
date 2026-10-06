@@ -7,6 +7,7 @@
 
 #include "bsp_battery.h"
 #include "bsp_display.h"
+#include "chess_ai_task.h"
 #include "chess_board_draw.h"
 #include "chess_core.h"
 #include "chess_font.h"
@@ -14,6 +15,7 @@
 #include "chess_ui.h"
 #include "chess_ui_model.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -57,6 +59,15 @@ static chess_move s_last_move;
 static bool s_has_last_move;
 static chess_view s_view;
 static chess_save s_scratch;
+/* AI session (M2): human is always White in AI games for now. */
+static uint8_t s_mode;
+static chess_ai_level s_difficulty;
+static bool s_thinking;
+static bool s_cancel_await;
+static uint64_t s_cancel_at_ms;
+static bool s_cancel_blocked;
+static unsigned s_home_mode; /* 0 main list, 1 difficulty list */
+static unsigned s_home_idx;
 
 static const char *cmd_label(chess_ui_cmd cmd) {
     switch (cmd) {
@@ -130,6 +141,10 @@ static void build_header_footer(void) {
         snprintf(s_view.header, sizeof(s_view.header), "%s to move   %d%%   %s",
                  pos->side_to_move == CHESS_WHITE ? "White" : "Black", soc,
                  s_saved ? "saved" : "UNSAVED");
+    }
+    if (s_thinking) {
+        snprintf(s_view.header, sizeof(s_view.header), "Thinking... %s",
+                 level_name(s_difficulty));
     }
 
     if (s_model.screen == CHESS_SCREEN_SELECT_PIECE && s_model.npieces > 0) {
@@ -247,6 +262,18 @@ static void render_all(void) {
             build_header_footer();
         }
     } else if (s_screen == APP_HOME) {
+        if (s_home_mode == 0) {
+            s_view.menu[0] = "Continue";
+            s_view.menu[1] = "New 2-player";
+            s_view.menu[2] = "New vs AI";
+            s_view.nmenu = 3;
+        } else {
+            s_view.menu[0] = "Easy";
+            s_view.menu[1] = "Normal";
+            s_view.menu[2] = "Hard";
+            s_view.nmenu = 3;
+        }
+        s_view.menu_idx = s_home_idx;
         s_view.screen = CHESS_VIEW_HOME;
     } else {
         chess_status st = chess_game_status(&s_game);
@@ -277,7 +304,7 @@ static bool persist_game(void) {
     save->settings.difficulty = CHESS_DIFF_MEDIUM;
     save->settings.language = 0;
     save->settings.brightness = 80;
-    save->mode = CHESS_MODE_LOCAL;
+    save->mode = s_mode;
     save->human_color = CHESS_WHITE;
     save->seq = s_seq;
     if (!s_backend_ready ||
@@ -297,9 +324,120 @@ static void start_fresh_game(void) {
                                  "w KQkq - 0 1");
     s_has_last_move = false;
     s_note[0] = '\0';
+    s_mode = CHESS_MODE_LOCAL;
+    s_thinking = false;
+    s_cancel_await = false;
+    s_cancel_blocked = false;
     s_generation++;
     feed_model_moves();
     persist_game();
+}
+
+static void start_ai_game(chess_ai_level level) {
+    start_fresh_game();
+    s_mode = CHESS_MODE_AI;
+    s_difficulty = level;
+    persist_game();
+}
+
+static const char *level_name(chess_ai_level level) {
+    switch (level) {
+    case CHESS_AI_EASY:
+        return "Easy";
+    case CHESS_AI_NORMAL:
+        return "Normal";
+    case CHESS_AI_HARD:
+        return "Hard";
+    default:
+        return "?";
+    }
+}
+
+/* Ask the worker for the side-to-move reply (AI games, engine Black).
+ * No-ops unless the game is ongoing, human just moved, and no search
+ * is already running or blocked. */
+static void maybe_request_ai(void) {
+    chess_ai_request req;
+    if (s_mode != CHESS_MODE_AI || s_thinking || s_cancel_blocked) {
+        return;
+    }
+    if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
+        return;
+    }
+    if (s_game.position.side_to_move != CHESS_BLACK) {
+        return;
+    }
+    if (chess_ai_task_busy()) {
+        return;
+    }
+    memset(&req, 0, sizeof(req));
+    req.position = s_game.position;
+    req.generation = s_generation;
+    req.level = s_difficulty;
+    chess_ai_level_budgets(s_difficulty, &req.deadline_ms, &req.node_max,
+                           &req.depth_max);
+    req.easy_seed = (uint32_t)(s_generation * 2654435761u);
+    if (!chess_ai_task_request(&req)) {
+        return;
+    }
+    s_thinking = true;
+    s_note[0] = '\0';
+}
+
+static void open_pause(void) {
+    chess_ui_command ignored;
+    feed_model_moves();
+    memset(&ignored, 0, sizeof(ignored));
+    chess_ui_model_event(&s_model, CHESS_EVT_LONG, &ignored);
+}
+
+static bool drain_ai_results(void) {
+    chess_ai_result_event res;
+    bool any = false;
+    while (chess_ai_task_take_result(&res)) {
+        bool was_awaiting;
+        any = true;
+        bool was_awaiting;
+        s_thinking = false;
+        was_awaiting = s_cancel_await;
+        s_cancel_await = false;
+        if (res.outcome == CHESS_AI_CANCELLED) {
+            /* Any arrival releases the cancel hold; only a live
+             * await reroutes to pause (a raced OK applies below). */
+            s_cancel_blocked = false;
+            if (was_awaiting) {
+                open_pause();
+                s_screen = APP_BOARD;
+            }
+            continue;
+        }
+        if (res.outcome == CHESS_AI_OK && res.has_move) {
+            if (chess_ai_apply_checked(&s_game, res.move, res.generation,
+                                       s_generation) == CHESS_OK) {
+                after_move_applied(res.move);
+                continue;
+            }
+            /* Stale/illegal/terminal: drop silently, already handled. */
+            continue;
+        }
+        if ((res.outcome == CHESS_AI_TIMEOUT ||
+             res.outcome == CHESS_AI_ENGINE_ERROR) &&
+            res.has_fallback) {
+            if (chess_ai_apply_checked(&s_game, res.fallback, res.generation,
+                                       s_generation) == CHESS_OK) {
+                snprintf(s_note, sizeof(s_note), "AI fallback");
+                after_move_applied(res.fallback);
+                continue;
+            }
+        }
+        /* CANCELLED without await, NO_MOVE, or failed fallback:
+         * nothing to apply; refresh below shows the true state. */
+    }
+    return any;
+}
+
+static uint64_t now_ms(void) {
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
 static void after_move_applied(chess_move m) {
@@ -310,7 +448,9 @@ static void after_move_applied(chess_move m) {
     persist_game();
     if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
         s_screen = APP_OVER;
+        return;
     }
+    maybe_request_ai();
 }
 
 static void handle_command(chess_ui_command cmd) {
@@ -386,10 +526,14 @@ static void boot_load(void) {
         s_game = save.game;
         s_seq = save.seq + 1;
         s_saved = true;
+        s_mode = (save.mode == CHESS_MODE_AI) ? CHESS_MODE_AI
+                                              : CHESS_MODE_LOCAL;
         s_generation++;
         feed_model_moves();
         if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
             s_screen = APP_OVER;
+        } else {
+            maybe_request_ai();
         }
         return;
     }
@@ -435,9 +579,51 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
         return;
     }
     if (s_screen == APP_HOME) {
-        /* Both keys continue; new games only via pause+confirm. */
-        s_screen = APP_BOARD;
+        /* Main list: Continue / New 2P / New AI. Difficulty list
+         * after New AI. LONG always lands safely on continue. */
+        if (s_home_mode == 0) {
+            if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
+                if (s_home_idx == 1) {
+                    start_fresh_game();
+                } else if (s_home_idx == 2) {
+                    s_home_mode = 1;
+                    s_home_idx = 0;
+                    render_all();
+                    return;
+                }
+                s_screen = APP_BOARD;
+            } else if (ev == BSP_BTN_CLICK) {
+                s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 2u)) % 3u;
+            } else if (ev == BSP_BTN_LONG) {
+                s_screen = APP_BOARD;
+            } else {
+                return;
+            }
+        } else {
+            if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
+                if (s_home_idx < 3) {
+                    start_ai_game((chess_ai_level)s_home_idx);
+                    s_screen = APP_BOARD;
+                }
+            } else if (ev == BSP_BTN_CLICK) {
+                s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 2u)) % 3u;
+            } else if (ev == BSP_BTN_LONG) {
+                s_home_mode = 0;
+                s_home_idx = 0;
+            } else {
+                return;
+            }
+        }
         render_all();
+        return;
+    }
+    if (s_thinking) {
+        /* THINKING: everything ignored except LONG-cancel. */
+        if (ev == BSP_BTN_LONG) {
+            chess_ai_task_cancel();
+            s_cancel_await = true;
+            s_cancel_at_ms = now_ms();
+        }
         return;
     }
     if (s_screen == APP_OVER) {
@@ -505,14 +691,38 @@ void chess_app_start(void) {
     s_suppress_click = false;
     s_note[0] = '\0';
     s_has_last_move = false;
+    s_mode = CHESS_MODE_LOCAL;
+    s_difficulty = CHESS_AI_NORMAL;
+    s_thinking = false;
+    s_cancel_await = false;
+    s_cancel_blocked = false;
+    s_home_mode = 0;
+    s_home_idx = 0;
     chess_ui_model_init(&s_model);
+    if (!chess_ai_task_start()) {
+        ESP_LOGW(TAG, "AI worker failed to start; AI games unavailable");
+    }
     boot_load();
     render_all();
     ESP_LOGI(TAG, "象棋应用就绪 gen=%llu", (unsigned long long)s_generation);
     for (;;) {
-        if (xQueueReceive(s_queue, &in, portMAX_DELAY) != pdTRUE) {
+        if (xQueueReceive(s_queue, &in, pdMS_TO_TICKS(50)) == pdTRUE) {
+            /* on_input renders on every consumed event. */
+            on_input(in.btn, in.event);
             continue;
         }
-        on_input(in.btn, in.event);
+        /* Idle poll: engine results and the cancel watchdog only. */
+        if (!drain_ai_results()) {
+            if (s_cancel_await && now_ms() - s_cancel_at_ms > 200u) {
+                /* Cancel ACK overdue: say so and hold new searches
+                 * until the worker lands. */
+                s_cancel_await = false;
+                s_cancel_blocked = true;
+                snprintf(s_note, sizeof(s_note), "cancel slow");
+                render_all();
+            }
+            continue;
+        }
+        render_all();
     }
 }

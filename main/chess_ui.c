@@ -85,12 +85,7 @@ static void render_error(const chess_view *view) {
 }
 
 static void render_home(const chess_view *view) {
-    (void)view;
-    clear_screen();
-    add_label(s_screen, "CHESS", 90, chess_font_title(), 0xFAFAFA);
-    add_label(s_screen, "OK: continue   LONG: new", 150, chess_font_ui(),
-              0xFAFAFA);
-    lv_screen_load(s_screen);
+    render_menu(view, "CHESS");
 }
 
 void chess_ui_render(const chess_view *view) {

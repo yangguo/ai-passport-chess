@@ -23,7 +23,8 @@ typedef enum chess_error {
   CHESS_ERR_CORRUPT = 7,
   CHESS_ERR_UNKNOWN_VERSION = 8,
   CHESS_ERR_NO_SAVE = 9,
-  CHESS_ERR_NO_SEQ = 10
+  CHESS_ERR_NO_SEQ = 10,
+  CHESS_ERR_STALE = 11
 } chess_error;
 
 typedef enum chess_color {

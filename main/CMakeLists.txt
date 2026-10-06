@@ -4,6 +4,7 @@ idf_component_register(
          "chess_ui.c"
          "chess_board_draw.c"
          "chess_nvs_esp.c"
+         "chess_ai_task.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp chess_core chess_storage chess_ui_model esp_timer nvs_flash
+    REQUIRES bsp chess_core chess_storage chess_ui_model chess_ai esp_timer nvs_flash
 )

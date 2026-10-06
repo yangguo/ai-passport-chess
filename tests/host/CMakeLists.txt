@@ -36,12 +36,23 @@ add_executable(test_ai_adapter
   test_ai_adapter.c
   ${CORE_SOURCES}
   ${CORE_DIR}/chess_game.c
-  ${AI_DIR}/chess_mcumax_adapter.c
+  ${AI_DIR}/chess_ai.c
   ${ENGINE_DIR}/mcu-max.c
 )
 target_include_directories(test_ai_adapter PRIVATE
   ${CORE_DIR}/include ${AI_DIR}/include ${ENGINE_DIR})
 add_test(NAME ai_adapter COMMAND test_ai_adapter)
+
+add_executable(test_ai_worker
+  test_ai_worker.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_DIR}/chess_ai.c
+  ${ENGINE_DIR}/mcu-max.c
+)
+target_include_directories(test_ai_worker PRIVATE
+  ${CORE_DIR}/include ${AI_DIR}/include ${ENGINE_DIR})
+add_test(NAME ai_worker COMMAND test_ai_worker)
 add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
   ${MODEL_DIR}/chess_ui_model.c)
 target_include_directories(test_ui_model PRIVATE
