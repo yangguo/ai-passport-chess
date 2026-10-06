@@ -1,0 +1,517 @@
+/* Chess application owner. Big temporaries are file-static: the main
+ * task stack is small and a chess_save alone is ~5.5 KiB. */
+#include "chess_app.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#include "bsp_battery.h"
+#include "bsp_display.h"
+#include "chess_board_draw.h"
+#include "chess_core.h"
+#include "chess_font.h"
+#include "chess_storage.h"
+#include "chess_ui.h"
+#include "chess_ui_model.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+
+static const char *TAG = "chess-app";
+
+#define INPUT_QUEUE_DEPTH 16
+
+/* NVS backend constructor lives in chess_nvs_esp.c. */
+chess_nvs_backend chess_nvs_esp_backend(void);
+
+typedef struct {
+    bsp_btn_t btn;
+    bsp_btn_ev_t event;
+} input_event_t;
+
+typedef enum app_screen {
+    APP_BOARD = 0,
+    APP_HOME,
+    APP_OVER,
+} app_screen_t;
+
+/* Error codes shown on the model error page. */
+#define ERR_LOAD_VERSION 0xE001u
+#define ERR_LOAD_CORRUPT 0xE002u
+#define ERR_LOAD_RETRY_FAILED 0xE003u
+
+static QueueHandle_t s_queue;
+static chess_game s_game;
+static chess_ui_model s_model;
+static chess_nvs_backend s_backend;
+static bool s_backend_ready;
+static app_screen_t s_screen;
+static uint64_t s_generation;
+static uint64_t s_seq;
+static bool s_saved;
+static bool s_battery_ok;
+static bool s_suppress_click;
+static char s_note[64];
+static chess_move s_last_move;
+static bool s_has_last_move;
+static chess_view s_view;
+static chess_save s_scratch;
+
+static const char *cmd_label(chess_ui_cmd cmd) {
+    switch (cmd) {
+    case CHESS_CMD_RESUME:
+        return "Resume";
+    case CHESS_CMD_CLAIM_CURRENT:
+        return "Claim draw";
+    case CHESS_CMD_CLAIM_PRESELECT:
+        return "Claim selected";
+    case CHESS_CMD_RESIGN:
+        return "Resign";
+    case CHESS_CMD_NEW_GAME:
+        return "New game";
+    case CHESS_CMD_GO_HOME:
+        return "Home";
+    default:
+        return "?";
+    }
+}
+
+static void square_name(uint8_t sq, char out[3]) {
+    out[0] = (char)('a' + sq % 8u);
+    out[1] = (char)('1' + sq / 8u);
+    out[2] = '\0';
+}
+
+static char piece_letter(chess_piece_type t) {
+    switch (t) {
+    case CHESS_PAWN:
+        return 'P';
+    case CHESS_KNIGHT:
+        return 'N';
+    case CHESS_BISHOP:
+        return 'B';
+    case CHESS_ROOK:
+        return 'R';
+    case CHESS_QUEEN:
+        return 'Q';
+    case CHESS_KING:
+        return 'K';
+    default:
+        return '?';
+    }
+}
+
+static void feed_model_moves(void) {
+    chess_move moves[CHESS_MAX_MOVES];
+    size_t count = 0;
+    if (chess_generate_legal(&s_game.position, moves, CHESS_MAX_MOVES,
+                             &count) != CHESS_OK) {
+        count = 0;
+    }
+    chess_ui_model_set_moves(&s_model, count > 0 ? moves : NULL, count);
+}
+
+/* Header: side + battery + save flag. Footer: selection + hints/notes. */
+static void build_header_footer(void) {
+    const chess_position *pos = &s_game.position;
+    int soc = s_battery_ok ? bsp_battery_soc() : -1;
+    char focus[8] = "-";
+    char target[8] = "-";
+    const char *piece = "";
+    char sel[32];
+    static char pbuf[8];
+
+    if (soc < 0) {
+        snprintf(s_view.header, sizeof(s_view.header), "%s to move   --   %s",
+                 pos->side_to_move == CHESS_WHITE ? "White" : "Black",
+                 s_saved ? "saved" : "UNSAVED");
+    } else {
+        snprintf(s_view.header, sizeof(s_view.header), "%s to move   %d%%   %s",
+                 pos->side_to_move == CHESS_WHITE ? "White" : "Black", soc,
+                 s_saved ? "saved" : "UNSAVED");
+    }
+
+    if (s_model.screen == CHESS_SCREEN_SELECT_PIECE && s_model.npieces > 0) {
+        uint8_t sq = s_model.pieces[s_model.piece_idx];
+        square_name(sq, focus);
+        snprintf(pbuf, sizeof(pbuf), "%c",
+                 piece_letter(pos->board[sq].type));
+        piece = pbuf;
+        snprintf(sel, sizeof(sel), "%s %s", focus, piece);
+    } else if ((s_model.screen == CHESS_SCREEN_SELECT_TARGET ||
+                s_model.screen == CHESS_SCREEN_PROMOTION) &&
+               s_model.selected_piece != CHESS_NO_SQUARE &&
+               s_model.ntargets > 0) {
+        uint8_t from = s_model.selected_piece;
+        uint8_t to = s_model.targets[s_model.target_idx];
+        square_name(from, focus);
+        square_name(to, target);
+        if (s_model.screen == CHESS_SCREEN_PROMOTION) {
+            snprintf(sel, sizeof(sel), "%s>%s=%c", focus, target,
+                     piece_letter(s_model.promos[s_model.promo_idx]));
+        } else {
+            snprintf(sel, sizeof(sel), "%s>%s", focus, target);
+        }
+        piece = "";
+    } else {
+        snprintf(sel, sizeof(sel), "-");
+    }
+    (void)piece;
+    if (s_note[0] != '\0') {
+        snprintf(s_view.footer, sizeof(s_view.footer), "%s\n%s", sel, s_note);
+    } else if (s_model.screen == CHESS_SCREEN_PROMOTION) {
+        snprintf(s_view.footer, sizeof(s_view.footer), "%s\nUP/DOWN piece",
+                 sel);
+    } else {
+        snprintf(s_view.footer, sizeof(s_view.footer), "%s\nUP/DOWN OK LONG",
+                 sel);
+    }
+}
+
+static void build_snapshot(void) {
+    chess_snapshot *snap = &s_view.snapshot;
+    unsigned sq;
+    chess_color mover = s_game.position.side_to_move;
+    uint8_t king = (mover == CHESS_WHITE) ? s_game.position.white_king
+                                          : s_game.position.black_king;
+    for (sq = 0; sq < 64u; sq++) {
+        snap->cells[sq] = s_game.position.board[sq];
+    }
+    snap->selected = CHESS_NO_SQUARE;
+    snap->ntargets = 0;
+    snap->hover = CHESS_NO_SQUARE;
+    snap->check = CHESS_NO_SQUARE;
+    snap->side = mover;
+    if (chess_is_attacked(&s_game.position, king,
+                           (chess_color)(mover ^ 1u))) {
+        snap->check = king;
+    }
+    if (s_has_last_move) {
+        snap->last_from = s_last_move.from;
+        snap->last_to = s_last_move.to;
+    } else {
+        snap->last_from = CHESS_NO_SQUARE;
+        snap->last_to = CHESS_NO_SQUARE;
+    }
+    if (s_model.screen == CHESS_SCREEN_SELECT_PIECE && s_model.npieces > 0) {
+        snap->hover = s_model.pieces[s_model.piece_idx];
+    } else if (s_model.screen == CHESS_SCREEN_SELECT_TARGET ||
+               s_model.screen == CHESS_SCREEN_PROMOTION) {
+        unsigned i;
+        snap->selected = s_model.selected_piece;
+        for (i = 0; i < s_model.ntargets && i < 64u; i++) {
+            snap->targets[i] = s_model.targets[i];
+        }
+        snap->ntargets = (uint8_t)s_model.ntargets;
+        if (s_model.ntargets > 0) {
+            snap->hover = s_model.targets[s_model.target_idx];
+        }
+    }
+}
+
+static void build_pause_menu(void) {
+    unsigned i;
+    s_view.nmenu = 0;
+    for (i = 0; i < s_model.npause && i < CHESS_MENU_MAX; i++) {
+        s_view.menu[i] = cmd_label(s_model.pause_items[i]);
+        s_view.nmenu++;
+    }
+    s_view.menu_idx = (unsigned)s_model.pause_idx;
+}
+
+static void render_all(void) {
+    if (!bsp_lvgl_lock(1000)) {
+        ESP_LOGE(TAG, "render without LVGL lock");
+        return;
+    }
+    if (s_screen == APP_BOARD || s_model.screen == CHESS_SCREEN_PAUSE ||
+        s_model.screen == CHESS_SCREEN_CONFIRM) {
+        if (s_model.screen == CHESS_SCREEN_SELECT_PIECE ||
+            s_model.screen == CHESS_SCREEN_SELECT_TARGET ||
+            s_model.screen == CHESS_SCREEN_PROMOTION) {
+            build_snapshot();
+            build_header_footer();
+            s_view.screen = CHESS_VIEW_BOARD;
+        } else if (s_model.screen == CHESS_SCREEN_PAUSE) {
+            build_pause_menu();
+            s_view.screen = CHESS_VIEW_PAUSE;
+        } else if (s_model.screen == CHESS_SCREEN_CONFIRM) {
+            snprintf(s_view.confirm_action, sizeof(s_view.confirm_action),
+                     "%s?", cmd_label(s_model.confirm_action));
+            s_view.confirm_yes = s_model.confirm_yes;
+            s_view.screen = CHESS_VIEW_CONFIRM;
+        } else {
+            s_view.screen = CHESS_VIEW_BOARD;
+            build_snapshot();
+            build_header_footer();
+        }
+    } else if (s_screen == APP_HOME) {
+        s_view.screen = CHESS_VIEW_HOME;
+    } else {
+        chess_status st = chess_game_status(&s_game);
+        snprintf(s_view.over, sizeof(s_view.over), "%s",
+                 st == CHESS_STATUS_CHECKMATE_WHITE_WINS   ? "White wins"
+                 : st == CHESS_STATUS_CHECKMATE_BLACK_WINS ? "Black wins"
+                 : st == CHESS_STATUS_STALEMATE            ? "Stalemate"
+                 : st == CHESS_STATUS_DRAW_DEAD            ? "Dead position"
+                 : st == CHESS_STATUS_DRAW_FIVEFOLD        ? "Fivefold draw"
+                 : st == CHESS_STATUS_DRAW_SEVENTY_FIVE    ? "75-move draw"
+                 : st == CHESS_STATUS_DRAW_CLAIMED_THREEFOLD
+                     ? "Draw claimed"
+                 : st == CHESS_STATUS_DRAW_CLAIMED_FIFTY ? "Draw claimed"
+                 : st == CHESS_STATUS_DRAW_AGREED       ? "Draw agreed"
+                 : st == CHESS_STATUS_RESIGN_WHITE_WINS ? "White wins"
+                 : st == CHESS_STATUS_RESIGN_BLACK_WINS ? "Black wins"
+                                                        : "Game over");
+        s_view.screen = CHESS_VIEW_OVER;
+    }
+    chess_ui_render(&s_view);
+    bsp_lvgl_unlock();
+}
+
+static bool persist_game(void) {
+    chess_save *save = &s_scratch;
+    memset(save, 0, sizeof(*save));
+    save->game = s_game;
+    save->settings.difficulty = CHESS_DIFF_MEDIUM;
+    save->settings.language = 0;
+    save->settings.brightness = 80;
+    save->mode = CHESS_MODE_LOCAL;
+    save->human_color = CHESS_WHITE;
+    save->seq = s_seq;
+    if (!s_backend_ready ||
+        chess_save_store(&s_backend, save) != CHESS_OK) {
+        s_saved = false;
+        snprintf(s_note, sizeof(s_note), "save failed");
+        return false;
+    }
+    s_seq++;
+    s_saved = true;
+    s_note[0] = '\0';
+    return true;
+}
+
+static void start_fresh_game(void) {
+    chess_game_init_fen(&s_game, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR "
+                                 "w KQkq - 0 1");
+    s_has_last_move = false;
+    s_note[0] = '\0';
+    s_generation++;
+    feed_model_moves();
+    persist_game();
+}
+
+static void after_move_applied(chess_move m) {
+    s_last_move = m;
+    s_has_last_move = true;
+    s_generation++;
+    feed_model_moves();
+    persist_game();
+    if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
+        s_screen = APP_OVER;
+    }
+}
+
+static void handle_command(chess_ui_command cmd) {
+    chess_error err;
+    switch (cmd.kind) {
+    case CHESS_CMD_NONE:
+        break;
+    case CHESS_CMD_SUBMIT_MOVE:
+        err = chess_game_apply(&s_game, cmd.move);
+        if (err == CHESS_OK) {
+            after_move_applied(cmd.move);
+        } else {
+            snprintf(s_note, sizeof(s_note), "rejected");
+        }
+        break;
+    case CHESS_CMD_CLAIM_CURRENT:
+        err = chess_game_claim_draw(&s_game, NULL);
+        if (err == CHESS_OK) {
+            persist_game();
+            s_screen = APP_OVER;
+        } else {
+            snprintf(s_note, sizeof(s_note), "no claim");
+        }
+        break;
+    case CHESS_CMD_CLAIM_PRESELECT:
+        err = chess_game_claim_draw(&s_game, &cmd.move);
+        if (err == CHESS_OK) {
+            persist_game();
+            s_screen = APP_OVER;
+        } else {
+            snprintf(s_note, sizeof(s_note), "no claim");
+        }
+        break;
+    case CHESS_CMD_RESIGN:
+        if (chess_game_resign(&s_game, s_game.position.side_to_move) ==
+            CHESS_OK) {
+            persist_game();
+            s_screen = APP_OVER;
+        }
+        break;
+    case CHESS_CMD_NEW_GAME:
+        start_fresh_game();
+        s_screen = APP_BOARD;
+        break;
+    case CHESS_CMD_GO_HOME:
+        s_screen = APP_HOME;
+        break;
+    case CHESS_CMD_RESUME:
+        s_screen = APP_BOARD;
+        break;
+    case CHESS_CMD_ERROR_RETRY:
+        /* Retry boot load (compat path); only reachable from boot. */
+        s_note[0] = '\0';
+        break;
+    case CHESS_CMD_ERROR_BACK:
+        s_screen = APP_HOME;
+        break;
+    }
+}
+
+/* Boot load: strict first; unknown-version and corrupt land on the
+ * model error page (retry = compat load, new = fresh, back = home). */
+static void boot_load(void) {
+    chess_save save;
+    chess_error err;
+    if (!s_backend_ready) {
+        start_fresh_game();
+        return;
+    }
+    memset(&save, 0, sizeof(save));
+    err = chess_save_load(&s_backend, &save);
+    if (err == CHESS_OK) {
+        s_game = save.game;
+        s_seq = save.seq + 1;
+        s_saved = true;
+        s_generation++;
+        feed_model_moves();
+        if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
+            s_screen = APP_OVER;
+        }
+        return;
+    }
+    if (err == CHESS_ERR_NO_SAVE) {
+        start_fresh_game();
+        return;
+    }
+    if (err == CHESS_ERR_UNKNOWN_VERSION) {
+        chess_ui_model_set_error(&s_model, ERR_LOAD_VERSION);
+    } else {
+        chess_ui_model_set_error(&s_model, ERR_LOAD_CORRUPT);
+    }
+    /* Fresh game underneath so NEW/BACK always work. */
+    start_fresh_game();
+    s_saved = false;
+}
+
+static chess_ui_event map_event(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    if (ev == BSP_BTN_LONG) {
+        return CHESS_EVT_LONG;
+    }
+    if (ev != BSP_BTN_CLICK) {
+        return CHESS_EVT_RELEASE;
+    }
+    switch (btn) {
+    case BSP_BTN_UP:
+        return CHESS_EVT_UP;
+    case BSP_BTN_DOWN:
+        return CHESS_EVT_DOWN;
+    case BSP_BTN_OK:
+    default:
+        return CHESS_EVT_OK;
+    }
+}
+
+static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    chess_ui_command cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    if (ev == BSP_BTN_LONG) {
+        s_suppress_click = true;
+    } else if (ev == BSP_BTN_CLICK && s_suppress_click) {
+        s_suppress_click = false;
+        return;
+    }
+    if (s_screen == APP_HOME) {
+        /* Both keys continue; new games only via pause+confirm. */
+        s_screen = APP_BOARD;
+        render_all();
+        return;
+    }
+    if (s_screen == APP_OVER) {
+        if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
+            start_fresh_game();
+            s_screen = APP_BOARD;
+        } else if (ev == BSP_BTN_LONG) {
+            s_screen = APP_HOME;
+        } else {
+            return;
+        }
+        render_all();
+        return;
+    }
+    if (chess_ui_model_event(&s_model, map_event(btn, ev), &cmd) !=
+        CHESS_OK) {
+        return;
+    }
+    if (cmd.kind == CHESS_CMD_ERROR_RETRY) {
+        /* Compat boot load, then resume where it lands. */
+        chess_save save;
+        memset(&save, 0, sizeof(save));
+        if (s_backend_ready &&
+            chess_save_load_compat(&s_backend, &save) == CHESS_OK) {
+            s_game = save.game;
+            s_seq = save.seq + 1;
+            s_saved = true;
+            s_generation++;
+            feed_model_moves();
+            s_screen = APP_BOARD;
+        } else {
+            chess_ui_model_set_error(&s_model, ERR_LOAD_RETRY_FAILED);
+        }
+        render_all();
+        return;
+    }
+    handle_command(cmd);
+    render_all();
+}
+
+void chess_app_button(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    input_event_t in;
+    if (s_queue == NULL) {
+        return;
+    }
+    in.btn = btn;
+    in.event = ev;
+    (void)xQueueSend(s_queue, &in, 0);
+}
+
+void chess_app_start(void) {
+    input_event_t in;
+    s_queue = xQueueCreate(INPUT_QUEUE_DEPTH, sizeof(input_event_t));
+    if (s_queue == NULL) {
+        ESP_LOGE(TAG, "事件队列创建失败");
+        return;
+    }
+    s_backend = chess_nvs_esp_backend();
+    s_backend_ready = true;
+    s_screen = APP_BOARD;
+    s_generation = 1;
+    s_seq = 1;
+    s_saved = true;
+    s_suppress_click = false;
+    s_note[0] = '\0';
+    s_has_last_move = false;
+    chess_ui_model_init(&s_model);
+    boot_load();
+    render_all();
+    ESP_LOGI(TAG, "象棋应用就绪 gen=%llu", (unsigned long long)s_generation);
+    for (;;) {
+        if (xQueueReceive(s_queue, &in, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        on_input(in.btn, in.event);
+    }
+}
