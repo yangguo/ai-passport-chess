@@ -18,6 +18,7 @@ set(STORAGE_DIR ${ROOT_DIR}/components/chess_storage)
 
 add_executable(chess-cli
   chess_cli.c
+  chess_engine.c
   ${CORE_DIR}/chess_position.c
   ${CORE_DIR}/chess_fen.c
   ${CORE_DIR}/chess_moves.c
@@ -25,10 +26,26 @@ add_executable(chess-cli
   ${STORAGE_DIR}/chess_codec.c
 )
 target_include_directories(chess-cli PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${CORE_DIR}/include ${STORAGE_DIR}/include)
 
 enable_testing()
 find_program(SH_BIN sh)
+
+# NOTE (RED): chess_engine.c is still a placeholder; link must fail.
+add_executable(test_engine_parse
+  tests/test_engine_parse.c
+  chess_engine.c
+  ${CORE_DIR}/chess_position.c
+  ${CORE_DIR}/chess_fen.c
+  ${CORE_DIR}/chess_moves.c
+  ${CORE_DIR}/chess_game.c
+)
+target_include_directories(test_engine_parse PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CORE_DIR}/include ${STORAGE_DIR}/include)
+add_test(NAME engine_parse COMMAND test_engine_parse)
+
 if(SH_BIN)
   add_test(NAME cli_fools
     COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
@@ -44,10 +61,21 @@ if(SH_BIN)
     COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
       ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/bad.cmd
       "error illegal" "error bad-uci" "error unknown-command"
+      "error no-engine"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   add_test(NAME cli_promo
     COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
       ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/promo.cmd
       "b7b8n" "ok b7b8n" "1N2k3"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  # Live engine test: needs a console engine binary (see
+  # third_party/mcu-max/SOURCES.md). Opt-in via CHESS_ENGINE_BIN.
+  if(DEFINED ENV{CHESS_ENGINE_BIN})
+    add_test(NAME cli_ai_live
+      COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
+        ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_live.cmd
+        "ok ai attached black" "engine: " "result: ongoing"
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(cli_ai_live PROPERTIES TIMEOUT 300)
+  endif()
 endif()

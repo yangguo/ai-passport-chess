@@ -28,3 +28,11 @@ Stop/cancel semantics, callback frequency, stack depth, and the
 generation check for stale results are unverified on-device. If the
 adapter cannot meet them: patch locally (recorded here) or switch
 engines — never ship an unverified AI path.
+
+## Alternative under evaluation: ripred/MicroChess (MIT, <2K RAM)
+
+https://github.com/ripred/MicroChess — MIT-licensed (cleaner than the
+mirror above) and designed for embedded RAM budgets, which directly
+answers the hash-table caveat. Not vendored yet: if the umax console
+protocol proves awkward live, or firmware RAM forces the issue, spike
+MicroChess next and record the verdict here.
