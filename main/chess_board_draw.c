@@ -68,53 +68,52 @@ static void draw_frame(lv_layer_t *layer, unsigned sq, uint32_t color,
 
 static void draw_dot(lv_layer_t *layer, unsigned sq) {
     lv_draw_arc_dsc_t dsc;
-    lv_point_t center;
-    center.x = (int32_t)cell_x(sq) + CHESS_BOARD_CELL / 2;
-    center.y = (int32_t)cell_y(sq) + CHESS_BOARD_CELL / 2;
     lv_draw_arc_dsc_init(&dsc);
     dsc.color = lv_color_hex(TARGET_COLOR);
     dsc.width = 5;
     dsc.opa = LV_OPA_COVER;
-    lv_draw_arc(layer, &dsc, &center, 3, 0, 360);
+    dsc.center.x = (int32_t)cell_x(sq) + CHESS_BOARD_CELL / 2;
+    dsc.center.y = (int32_t)cell_y(sq) + CHESS_BOARD_CELL / 2;
+    dsc.radius = 3;
+    dsc.start_angle = 0;
+    dsc.end_angle = 360;
+    lv_draw_arc(layer, &dsc);
 }
 
 static void draw_ring(lv_layer_t *layer, unsigned sq) {
     lv_draw_arc_dsc_t dsc;
-    lv_point_t center;
-    center.x = (int32_t)cell_x(sq) + CHESS_BOARD_CELL / 2;
-    center.y = (int32_t)cell_y(sq) + CHESS_BOARD_CELL / 2;
     lv_draw_arc_dsc_init(&dsc);
     dsc.color = lv_color_hex(TARGET_COLOR);
     dsc.width = 3;
     dsc.opa = LV_OPA_COVER;
-    lv_draw_arc(layer, &dsc, &center, 11, 0, 360);
+    dsc.center.x = (int32_t)cell_x(sq) + CHESS_BOARD_CELL / 2;
+    dsc.center.y = (int32_t)cell_y(sq) + CHESS_BOARD_CELL / 2;
+    dsc.radius = 11;
+    dsc.start_angle = 0;
+    dsc.end_angle = 360;
+    lv_draw_arc(layer, &dsc);
 }
 
 static void draw_line(lv_layer_t *layer, int x1, int y1, int x2, int y2,
                       uint32_t color, int32_t width) {
     lv_draw_line_dsc_t dsc;
-    lv_point_t p1;
-    lv_point_t p2;
-    p1.x = x1;
-    p1.y = y1;
-    p2.x = x2;
-    p2.y = y2;
     lv_draw_line_dsc_init(&dsc);
     dsc.color = lv_color_hex(color);
     dsc.width = width;
     dsc.round_end = 1;
     dsc.round_start = 1;
     dsc.opa = LV_OPA_COVER;
-    lv_draw_line(layer, &dsc, &p1, &p2);
+    dsc.p1.x = x1;
+    dsc.p1.y = y1;
+    dsc.p2.x = x2;
+    dsc.p2.y = y2;
+    lv_draw_line(layer, &dsc);
 }
 
 static void draw_disc(lv_layer_t *layer, int cx, int cy, int r,
                        uint32_t color) {
     lv_draw_arc_dsc_t dsc;
-    lv_point_t center;
     int32_t width;
-    center.x = cx;
-    center.y = cy;
     if (r < 2) {
         r = 2;
     }
@@ -123,7 +122,12 @@ static void draw_disc(lv_layer_t *layer, int cx, int cy, int r,
     dsc.color = lv_color_hex(color);
     dsc.width = width;
     dsc.opa = LV_OPA_COVER;
-    lv_draw_arc(layer, &dsc, &center, (int32_t)(r - 1), 0, 360);
+    dsc.center.x = cx;
+    dsc.center.y = cy;
+    dsc.radius = (uint16_t)(r - 1);
+    dsc.start_angle = 0;
+    dsc.end_angle = 360;
+    lv_draw_arc(layer, &dsc);
 }
 
 static void draw_ball(lv_layer_t *layer, int cx, int cy, int r, uint32_t fill,
