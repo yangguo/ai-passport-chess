@@ -11,7 +11,9 @@ die() {
 }
 
 [ -f "$BUILD/ai-passport-chess.bin" ] || die "missing app image (build first?)"
-[ -f "$BUILD/partitions.csv" ] || die "missing partition table"
+# The partition CSV lives at the project root; the build dir only
+# holds the generated binary table.
+[ -f "partitions.csv" ] || die "missing partition table"
 
 idf.py merge-bin -o "$BUILD/merged.bin" >/dev/null
 [ -f "$BUILD/merged.bin" ] || die "merge-bin produced nothing"
