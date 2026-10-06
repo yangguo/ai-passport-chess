@@ -1,0 +1,16 @@
+.DS_Store
+/build/
+/dist/
+/artifacts/
+/work/
+/managed_components/
+/sdkconfig
+/sdkconfig.old
+.env
+.env.*
+__pycache__/
+*.pyc
+*.elf
+*.map
+*.bin
+/backups/

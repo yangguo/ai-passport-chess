@@ -1,0 +1,30 @@
+# 硬件基线与集成边界
+
+核实：2026-10-06；官方源码基线与链接见 [来源](sources.md)。这是 FoloToy AI Passport 开发仓库的 ESP-IDF 5.5.3 基线，不能混用 XiaoZhi 分支的 SDK 要求。
+
+| 项目 | 依据/设计 |
+|---|---|
+| MCU | ESP32-C3，单核，最高 160MHz；实际 CPU 配置在 M0 检查并记录 |
+| Flash | 8MiB，无 PSRAM；不把 Flash 大小误当可用 RAM |
+| 显示 | ST7789P3，240×320 RGB565，SPI2；速率以锁定 `bsp_pins.h` 为准 |
+| 输入 | GPIO0 ADC 电阻梯，UP/DOWN/OK；无触摸、不能依赖同时按两键 |
+| USB | 原生 USB Serial/JTAG；GPIO18/19 保留；UART0 默认 TX GPIO21 与背光冲突 |
+| 显示 RAM | 单 DMA `240×20×2 = 9600 bytes`；LVGL pool 24KiB |
+| 遮罩 | BSP 局部缓冲应用半径 30px 四角遮罩；不要创建全屏 ARGB 圆角图层 |
+| 其他 | ES8311、CW2017 共享 BSP I2C0；BLE 不是 Bluetooth Classic |
+
+应用不复制引脚、ADC 窗口、I2C 地址、LCD 初始化序列。使用 `bsp_button_init`、`bsp_display_init`、`bsp_lvgl_init`、`bsp_lvgl_lock/unlock` 与电量 API；电量读失败显示 `--`，不阻止下棋。
+
+官方 pin 宏给出短按 180ms、长按 500ms；不在应用再建 ADC1，不照搬通用 ESP32 按键接线。回调只入队。真机在电池高/低电量分别验证单击、长按、松开；长按不得在 release 时额外触发落子。
+
+源码与部分旧硬件文档的 SPI 频率描述存在差异（40/80MHz）；设计不据旧文字写死速度。M0 以锁定 pin 宏和实际初始化值记录配置，再验证屏幕稳定性。无 LCD MISO、触摸、TE 对外契约；禁止凭芯片功能推断板上存在这些接口。
+
+## 分区
+
+初期保留官方最小表：NVS `0x9000/0x6000`，PHY `0xf000/0x1000`，factory app `0x10000/0x7f0000`。无 OTA。存档压力测试不通过才评估扩展 NVS，并明确旧存档迁移/刷写影响。所有分区必须在 8MiB 内且不重叠。
+
+## 字体与资源
+
+中文是本项目产品选择。生成“小而完整”的使用字符集，不以官方 demo 英文界面代替中文验收；每个 label 设置字体，测试“白方、黑方、将军、将死、逼和、升变、保存失败”等实际文案。棋子不依赖 Unicode 象棋字符覆盖。
+
+音频、Wi-Fi、BLE 初期不初始化；若后续加入，重测 DMA、共享总线、heap、任务栈、功耗和释放流程。deep sleep 后会重启，必须从存档恢复；电源键硬关机没有可靠的最后保存回调。
