@@ -29,10 +29,21 @@ generation check for stale results are unverified on-device. If the
 adapter cannot meet them: patch locally (recorded here) or switch
 engines — never ship an unverified AI path.
 
-## Alternative under evaluation: ripred/MicroChess (MIT, <2K RAM)
+## Alternative evaluated 2026-10-07: ripred/MicroChess — keep for firmware
 
-https://github.com/ripred/MicroChess — MIT-licensed (cleaner than the
-mirror above) and designed for embedded RAM budgets, which directly
-answers the hash-table caveat. Not vendored yet: if the umax console
-protocol proves awkward live, or firmware RAM forces the issue, spike
-MicroChess next and record the verdict here.
+https://github.com/ripred/MicroChess (MIT + LICENSE file).
+
+| axis | umax (host choice) | MicroChess (firmware candidate) |
+|---|---|---|
+| license | public-domain dedication, no file | MIT + LICENSE ✅ |
+| footprint | ~192 MiB hash (host fine, firmware impossible) | <2 KiB RAM ✅✅ |
+| promotion | queen-only | queen-only (`last_was_pawn_promotion … to a Queen`) — tie |
+| language/port | C89, dependency-free | C++ with hard `#include "Arduino.h"` (PROGMEM) — needs a shim for ESP-IDF |
+| host status | LIVE green via black-box driver | one `unit_test_001.cpp`; no arduino toolchain here; protocol unknown |
+| strength | club level | casual 6-ply (fits "no strength gate") |
+
+Decision: host stays on umax (verified live 2026-10-07, 7/7 CLI green
+incl. `cli_ai_live`). Spike the MicroChess adapter when firmware work
+(Task 1/8) starts — its RAM budget and MIT license directly answer
+umax's two firmware blockers, and the Arduino shim + on-device
+measurement belong to that phase anyway.
