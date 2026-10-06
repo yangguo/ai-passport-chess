@@ -14,8 +14,11 @@ die() {
 # The partition CSV lives at the project root; the build dir only
 # holds the generated binary table.
 [ -f "partitions.csv" ] || die "missing partition table"
+[ -f "$BUILD/flasher_args.json" ] || die "missing flasher args (build first?)"
 
-idf.py merge-bin -o "$BUILD/merged.bin" >/dev/null
+mkdir -p "$BUILD"
+# Absolute output path: esptool must never depend on ambient CWD.
+idf.py merge-bin -o "$PWD/$BUILD/merged.bin" >/dev/null
 [ -f "$BUILD/merged.bin" ] || die "merge-bin produced nothing"
 
 # Factory app must fit its 0x7f0000 partition; report hard numbers.
