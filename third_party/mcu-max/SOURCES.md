@@ -1,49 +1,58 @@
-# mcu-max engine provenance (M2 spike input)
+# mcu-max engine provenance (M2) + host AI driver note
 
-- Upstream: https://github.com/Spitfire1900/umax (mirror of micro-Max 4.8
-  by H.G. Muller; canonical background:
-  https://www.chessprogramming.org/Micro-Max)
-- Pinned commit: `e9d32309ae70e5903d99b0d8149a39533be095d9` (master)
-- File: `umax4_8.c` (9357 bytes, verbatim, no local patches)
-- License: public domain by author dedication (micro-Max was released by
-  H.G. Muller into the public domain; the mirror carries no separate
-  LICENSE file, so this note stands in for it — re-verify before any
-  firmware release build)
+## Pinned engine: Gissio/mcu-max 1.0.6 (CORRECT per docs/sources.md)
 
-## Verified properties (source read + design match)
+- Upstream: https://github.com/Gissio/mcu-max
+- Pinned commit: `aa03caffce50729566b5db6965bf735c31f33eea`
+- Files (verbatim, no local patches): `mcu-max.h`, `mcu-max.c`, `LICENSE`
+- License: MIT, (c) 2022-2025 Gissio — full text in `LICENSE`, keep it
+  on every import or firmware release build
 
-- 0x88 mailbox board, global mutable state (NOT reentrant as-is)
-- Negamax + quiescence + iterative deepening, ~16M-entry hash table
-  (~192 MiB static) — MUST be disabled or shrunk for firmware
-- "Full FIDE rules (expt under-promotion)": always promotes to queen;
-  the core re-validates every engine move, so rules are never reduced
-  to fit the engine (all four promotions stay core-supported)
-- Console main loop only (prints board, reads coordinate moves);
-  there is no setboard/API entry — host use is black-box subprocess
-  with board-diff extraction, FEN re-sync guard, and core validation
+## Verified properties (header + source read)
 
-## Firmware adapter risks (Task 9/10 must resolve, not assumed)
+- In-process C API (not a console loop): `mcumax_set_fen_position`,
+  `mcumax_search_best_move(node_max, depth_max)`,
+  `mcumax_search_valid_moves`, `mcumax_play_move`
+- Cancellation path exists: `mcumax_set_callback` +
+  `mcumax_stop_search` (callback fires periodically during search) —
+  this is what the firmware worker (Task 10) builds its deadline on
+- Hash table OFF by default (`MCUMAX_HASHING_ENABLED` commented out);
+  enabling pulls a 2^24-entry table — never enable on-device
+- Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
+  adapter converts both ways; FEN goes in verbatim
+- "Compliant with FIDE laws (except for underpromotion)": replies
+  that promote are always queens — the core re-validates every
+  engine move, so rules are never reduced to fit the engine
 
-Stop/cancel semantics, callback frequency, stack depth, and the
-generation check for stale results are unverified on-device. If the
-adapter cannot meet them: patch locally (recorded here) or switch
-engines — never ship an unverified AI path.
+## Correction 2026-10-07: umax4_8.c was a misidentification — REMOVED
+
+`umax4_8.c` (Spitfire1900/umax mirror of micro-Max) was vendored on
+the guess "mcu-max ≈ micro-Max" from the shared 0x88 trait, then
+driven live once as a black-box subprocess to prove the CLI loop.
+The design pins Gissio/mcu-max instead, whose real bounded-search
+API made the subprocess obsolete: removed with the pty driver in
+the adapter switch. Nothing ships from that episode except the
+lesson (block-buffered stdout needs a pty).
 
 ## Alternative evaluated 2026-10-07: ripred/MicroChess — keep for firmware
 
 https://github.com/ripred/MicroChess (MIT + LICENSE file).
 
-| axis | umax (host choice) | MicroChess (firmware candidate) |
+| axis | mcu-max (choice) | MicroChess (firmware candidate) |
 |---|---|---|
-| license | public-domain dedication, no file | MIT + LICENSE ✅ |
-| footprint | ~192 MiB hash (host fine, firmware impossible) | <2 KiB RAM ✅✅ |
-| promotion | queen-only | queen-only (`last_was_pawn_promotion … to a Queen`) — tie |
-| language/port | C89, dependency-free | C++ with hard `#include "Arduino.h"` (PROGMEM) — needs a shim for ESP-IDF |
-| host status | LIVE green via black-box driver | one `unit_test_001.cpp`; no arduino toolchain here; protocol unknown |
-| strength | club level | casual 6-ply (fits "no strength gate") |
+| license | MIT + LICENSE ✅ | MIT + LICENSE ✅ |
+| footprint | hash off by default; base RAM small | <2 KiB RAM ✅✅ |
+| promotion | queen-only | queen-only — tie |
+| language/port | C, dependency-free, real API | C++ with hard `#include "Arduino.h"` — needs a shim |
+| host status | adapter in progress | one unit test; no toolchain here |
 
-Decision: host stays on umax (verified live 2026-10-07, 7/7 CLI green
-incl. `cli_ai_live`). Spike the MicroChess adapter when firmware work
-(Task 1/8) starts — its RAM budget and MIT license directly answer
-umax's two firmware blockers, and the Arduino shim + on-device
-measurement belong to that phase anyway.
+Decision: host goes mcu-max (proper bounded-search + stop API, no
+protocol parsing). Spike the MicroChess adapter only if mcu-max
+fails verification on the firmware path.
+
+## Firmware adapter risks (Task 9/10 must resolve, not assumed)
+
+Callback frequency under time pressure, stack depth at depth_max on
+ESP32-C3, worst-case nodes-per-deadline calibration, and the
+generation check for stale results are unverified on-device. Never
+ship an unverified AI path.

@@ -1,32 +1,31 @@
 /* Host chess CLI (playable frontend): ASCII board, UCI moves, save/load,
- * claims, resignation, and an attached console engine (`ai`) over the
- * tested core. The engine plays a color from a fresh startpos game;
- * every reply is dry-run validated against the core before it lands.
+ * claims, resignation, and in-process engine replies (`ai`) over the
+ * tested core. Every engine suggestion is core-validated before it
+ * lands; failures print an error and leave the game untouched.
  *
  * Line protocol (script-testable): `ok <detail>` on success,
  * `error <reason>` on failure; `quit`/EOF exits 0. Reasons:
  * bad-uci, illegal, unknown-command, no-save, corrupt, game-over,
- * no-claim, bad-fen, bad-file, no-engine, engine-attached,
- * engine-start, engine-spawn, engine-desync, engine-detached, bad-arg.
+ * no-claim, bad-fen, bad-file, bad-arg, engine-failed.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "chess_ai.h"
 #include "chess_core.h"
-#include "chess_engine.h"
 #include "chess_storage.h"
 
 #define START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+/* Engine search budget for `ai`: casual strength, seconds per move. */
+#define CLI_AI_NODES 200000u
+#define CLI_AI_DEPTH 4u
 
 typedef struct cli_state {
   chess_game game;
   chess_settings settings;
   uint64_t seq;
-  chess_engine engine;
-  bool attached;
-  chess_color engine_color;
-  const char *engine_path;
 } cli_state;
 
 static const char *status_word(chess_status st) {
@@ -206,126 +205,31 @@ static void cmd_moves(cli_state *st, const char *arg) {
   printf("\n");
 }
 
-static bool placement_matches(const chess_position *pos,
-                              const chess_piece b[64]) {
-  unsigned sq;
-  for (sq = 0; sq < 64u; sq++) {
-    if (pos->board[sq].type != b[sq].type) {
-      return false;
-    }
-    if (b[sq].type != CHESS_EMPTY &&
-        pos->board[sq].color != b[sq].color) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static void detach_engine(cli_state *st) {
-  chess_engine_kill(&st->engine);
-  st->attached = false;
-}
-
-/* One engine turn for the side to move: empty line, reply board, diff,
- * dry-run against a position copy, apply only on full match. */
-static void engine_turn(cli_state *st) {
-  char text[80];
-  chess_piece cur[64];
-  chess_piece before[64];
+/* Engine move for the side to move, via the in-process adapter. Works
+ * from any ongoing position (the engine takes FEN, so no session or
+ * attach rules). The adapter core-validates; a second apply can only
+ * fail if the game ended between the two calls. */
+static void cmd_ai(cli_state *st, const char *arg) {
   chess_move reply;
   chess_error err;
   char uci[6];
-  unsigned sq;
-  for (sq = 0; sq < 64u; sq++) {
-    before[sq] = st->game.position.board[sq];
+  if (arg != NULL) {
+    printf("error bad-arg\n");
+    return;
   }
-  if (chess_engine_send(&st->engine, NULL) != 0 ||
-      chess_engine_read_board(&st->engine, text) != 0 ||
-      chess_engine_parse_board(text, CHESS_ENGINE_BOARD_LEN, cur) != 0 ||
-      chess_engine_diff_move(before, cur,
-                             st->game.position.side_to_move,
-                             &reply) != 0 ||
-      chess_engine_try_apply(&st->game.position, reply, cur) != 0) {
-    detach_engine(st);
-    printf("error engine-detached\n");
+  if (chess_ai_suggest(&st->game.position, CLI_AI_NODES, CLI_AI_DEPTH,
+                       &reply) != 0) {
+    printf("error engine-failed\n");
     return;
   }
   err = chess_game_apply(&st->game, reply);
   if (err != CHESS_OK) {
-    detach_engine(st);
-    printf("error engine-detached\n");
+    printf("error %s\n", move_error(err));
     return;
   }
   move_to_uci(reply, uci);
   printf("engine: %s\n", uci);
-}
-
-/* Forward our just-played move and verify the echo board matches. */
-static bool forward_and_verify(cli_state *st, const char *uci4) {
-  char text[80];
-  chess_piece cur[64];
-  if (chess_engine_send(&st->engine, uci4) != 0 ||
-      chess_engine_read_board(&st->engine, text) != 0 ||
-      chess_engine_parse_board(text, CHESS_ENGINE_BOARD_LEN, cur) != 0 ||
-      !placement_matches(&st->game.position, cur)) {
-    detach_engine(st);
-    printf("error engine-desync\n");
-    return false;
-  }
-  return true;
-}
-
-/* Attach the engine from a fresh startpos game. Mid-game attaches are
- * refused: the console engine has no setboard, so sync is impossible. */
-static void cmd_ai(cli_state *st, const char *arg) {
-  chess_color color = CHESS_BLACK;
-  char text[80];
-  chess_piece cur[64];
-  char fen[CHESS_FEN_MAX];
-  if (st->engine_path == NULL) {
-    printf("error no-engine\n");
-    return;
-  }
-  if (st->attached) {
-    printf("error engine-attached\n");
-    return;
-  }
-  if (arg != NULL) {
-    if (strcmp(arg, "white") == 0) {
-      color = CHESS_WHITE;
-    } else if (strcmp(arg, "black") == 0) {
-      color = CHESS_BLACK;
-    } else {
-      printf("error bad-arg\n");
-      return;
-    }
-  }
-  if (st->game.history_len != 1 ||
-      chess_position_to_fen(&st->game.position, fen, sizeof(fen)) !=
-          CHESS_OK ||
-      strcmp(fen, START_FEN) != 0) {
-    printf("error engine-start\n");
-    return;
-  }
-  if (chess_engine_spawn(&st->engine, st->engine_path) != 0) {
-    printf("error engine-spawn\n");
-    return;
-  }
-  st->attached = true;
-  st->engine_color = color;
-  if (chess_engine_read_board(&st->engine, text) != 0 ||
-      chess_engine_parse_board(text, CHESS_ENGINE_BOARD_LEN, cur) != 0 ||
-      !placement_matches(&st->game.position, cur)) {
-    detach_engine(st);
-    printf("error engine-desync\n");
-    return;
-  }
-  if (color == CHESS_WHITE) {
-    printf("ok ai attached white\n");
-    engine_turn(st);
-  } else {
-    printf("ok ai attached black\n");
-  }
+  print_status(st);
 }
 
 static void cmd_play(cli_state *st, const char *arg) {
@@ -336,11 +240,6 @@ static void cmd_play(cli_state *st, const char *arg) {
     printf("error bad-uci\n");
     return;
   }
-  if (st->attached &&
-      st->game.position.side_to_move == st->engine_color) {
-    printf("error engine-turn\n");
-    return;
-  }
   err = chess_game_apply(&st->game, m);
   if (err != CHESS_OK) {
     printf("error %s\n", move_error(err));
@@ -348,21 +247,6 @@ static void cmd_play(cli_state *st, const char *arg) {
   }
   move_to_uci(m, uci);
   printf("ok %s\n", uci);
-  if (st->attached) {
-    if (chess_game_status(&st->game) != CHESS_STATUS_ONGOING) {
-      detach_engine(st);
-    } else {
-      char fwd[5];
-      fwd[0] = uci[0];
-      fwd[1] = uci[1];
-      fwd[2] = uci[2];
-      fwd[3] = uci[3];
-      fwd[4] = '\0';
-      if (forward_and_verify(st, fwd)) {
-        engine_turn(st);
-      }
-    }
-  }
   print_status(st);
 }
 
@@ -383,9 +267,6 @@ static void cmd_claim(cli_state *st, const char *arg) {
     return;
   }
   printf("ok claimed\n");
-  if (chess_game_status(&st->game) != CHESS_STATUS_ONGOING) {
-    detach_engine(st);
-  }
   print_status(st);
 }
 
@@ -491,7 +372,7 @@ static void print_help(void) {
          "  load <file>      restore a save (history included)\n"
          "  fen              print the current FEN\n"
          "  status           print the game result\n"
-         "  ai [white|black] attach the engine (fresh startpos only)\n"
+         "  ai               engine moves for the side to move\n"
          "  help             this text\n"
          "  quit             exit\n");
 }
@@ -536,21 +417,17 @@ static void dispatch(cli_state *st, char *line, bool *quit) {
     if (chess_game_resign(&st->game, st->game.position.side_to_move) ==
         CHESS_OK) {
       printf("ok resigned\n");
-      detach_engine(st);
       print_status(st);
     } else {
       printf("error game-over\n");
     }
   } else if (strcmp(cmd, "new") == 0) {
-    detach_engine(st);
     cmd_new(st);
   } else if (strcmp(cmd, "loadfen") == 0) {
-    detach_engine(st);
     cmd_loadfen(st, arg);
   } else if (strcmp(cmd, "save") == 0) {
     cmd_save(st, arg);
   } else if (strcmp(cmd, "load") == 0) {
-    detach_engine(st);
     cmd_load(st, arg);
   } else if (strcmp(cmd, "fen") == 0) {
     cmd_fen(st);
@@ -563,33 +440,21 @@ static void dispatch(cli_state *st, char *line, bool *quit) {
   }
 }
 
-int main(int argc, char **argv) {
+int main(void) {
   cli_state st;
   char line[1024];
   bool quit = false;
-  const char *engine_path = getenv("CHESS_ENGINE_BIN");
-  int i;
   memset(&st, 0, sizeof(st));
-  for (i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--engine") == 0 && i + 1 < argc) {
-      engine_path = argv[++i];
-    } else {
-      fprintf(stderr, "usage: %s [--engine PATH]\n", argv[0]);
-      return 2;
-    }
-  }
   chess_game_init_fen(&st.game, START_FEN);
   st.settings.difficulty = CHESS_DIFF_MEDIUM;
   st.settings.language = 0;
   st.settings.brightness = 80;
   st.seq = 1;
-  st.engine_path = engine_path;
   printf("chess-cli ready (type help)\n");
   while (!quit && fgets(line, sizeof(line), stdin) != NULL) {
     line[strcspn(line, "\r\n")] = '\0';
     dispatch(&st, line, &quit);
   }
-  detach_engine(&st);
   printf("bye\n");
   return 0;
 }

@@ -1,0 +1,4 @@
+ai
+status
+board
+quit

@@ -26,7 +26,22 @@ add_executable(test_game test_game.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c)
 target_include_directories(test_game PRIVATE ${CORE_DIR}/include)
 
 set(MODEL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_ui_model)
-# NOTE (RED): chess_ui_model.c does not exist yet; link must fail for now.
+set(AI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_ai)
+set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mcu-max)
+set_source_files_properties(${ENGINE_DIR}/mcu-max.c PROPERTIES
+  COMPILE_OPTIONS "-Wno-error")
+
+# NOTE (RED): chess_mcumax_adapter.c is still a placeholder.
+add_executable(test_ai_adapter
+  test_ai_adapter.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_DIR}/chess_mcumax_adapter.c
+  ${ENGINE_DIR}/mcu-max.c
+)
+target_include_directories(test_ai_adapter PRIVATE
+  ${CORE_DIR}/include ${AI_DIR}/include ${ENGINE_DIR})
+add_test(NAME ai_adapter COMMAND test_ai_adapter)
 add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
   ${MODEL_DIR}/chess_ui_model.c)
 target_include_directories(test_ui_model PRIVATE
