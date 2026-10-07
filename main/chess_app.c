@@ -518,20 +518,20 @@ static void handle_command(chess_ui_command cmd) {
 /* Boot load: strict first; unknown-version and corrupt land on the
  * model error page (retry = compat load, new = fresh, back = home). */
 static void boot_load(void) {
-    chess_save save;
+    chess_save *save = &s_scratch;
     chess_error err;
     if (!s_backend_ready) {
         start_fresh_game();
         return;
     }
-    memset(&save, 0, sizeof(save));
-    err = chess_save_load(&s_backend, &save);
+    memset(save, 0, sizeof(*save));
+    err = chess_save_load(&s_backend, save);
     if (err == CHESS_OK) {
-        s_game = save.game;
-        s_seq = save.seq + 1;
+        s_game = save->game;
+        s_seq = save->seq + 1;
         s_saved = true;
-        s_mode = (save.mode == CHESS_MODE_AI) ? CHESS_MODE_AI
-                                              : CHESS_MODE_LOCAL;
+        s_mode = (save->mode == CHESS_MODE_AI) ? CHESS_MODE_AI
+                                                : CHESS_MODE_LOCAL;
         s_generation++;
         feed_model_moves();
         if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
@@ -648,12 +648,12 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     }
     if (cmd.kind == CHESS_CMD_ERROR_RETRY) {
         /* Compat boot load, then resume where it lands. */
-        chess_save save;
-        memset(&save, 0, sizeof(save));
+        chess_save *save = &s_scratch;
+        memset(save, 0, sizeof(*save));
         if (s_backend_ready &&
-            chess_save_load_compat(&s_backend, &save) == CHESS_OK) {
-            s_game = save.game;
-            s_seq = save.seq + 1;
+            chess_save_load_compat(&s_backend, save) == CHESS_OK) {
+            s_game = save->game;
+            s_seq = save->seq + 1;
             s_saved = true;
             s_generation++;
             feed_model_moves();
