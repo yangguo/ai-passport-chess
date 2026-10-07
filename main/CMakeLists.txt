@@ -5,6 +5,7 @@ idf_component_register(
          "chess_board_draw.c"
          "chess_nvs_esp.c"
          "chess_ai_task.c"
+         "../assets/fonts/chess_zh_16.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp chess_core chess_storage chess_ui_model chess_ai esp_timer nvs_flash
+    REQUIRES bsp chess_core chess_storage chess_ui_model chess_ai chess_i18n esp_timer nvs_flash
 )

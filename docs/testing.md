@@ -40,6 +40,8 @@ UI reducer 在 host 无 LVGL 环境做事件序列测试：空候选、wrap、�
 
 codec 用假 NVS backend 模拟 write/commit 前后掉电、bit flip、未知版本、槽缺失、最大长度、序号与 CRC。恢复后的 side、rights、ep、half/fullmove、history、result/settings 与原始等价；三次重复必须跨重启仍可申报。
 
+语言模块在无 LVGL host 测试中覆盖英文/简体中文映射、未知语言回退、来回切换和所有文案非空。`tools/check_chess_font_coverage.py` 验证生成字库覆盖所有翻译汉字，并由 GitHub Actions 执行；真机再验证主菜单切换、整页中文显示、继续对局与重启后语言保持。
+
 AI fake clock 在每次 callback 推进时间；deadline 到达必须停止并返回有效着或明确失败；单独测 CPU yield、取消、转换棋盘方向、引擎非法结果、升变与 underpromotion 局面。真机才能证明实际 deadline 和 watchdog。
 
 ## 编译与设备

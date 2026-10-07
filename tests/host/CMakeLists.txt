@@ -26,6 +26,7 @@ add_executable(test_game test_game.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c)
 target_include_directories(test_game PRIVATE ${CORE_DIR}/include)
 
 set(MODEL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_ui_model)
+set(I18N_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_i18n)
 set(AI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_ai)
 set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mcu-max)
 set_source_files_properties(${ENGINE_DIR}/mcu-max.c PROPERTIES
@@ -57,6 +58,9 @@ add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
 target_include_directories(test_ui_model PRIVATE
   ${CORE_DIR}/include ${MODEL_DIR}/include)
 
+add_executable(test_i18n test_i18n.c ${I18N_DIR}/chess_i18n.c)
+target_include_directories(test_i18n PRIVATE ${I18N_DIR}/include)
+
 set(STORAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_storage)
 add_executable(test_codec test_codec.c ${CORE_SOURCES}
   ${CORE_DIR}/chess_game.c
@@ -71,6 +75,7 @@ enable_testing()
 add_test(NAME core COMMAND test_core)
 add_test(NAME game COMMAND test_game)
 add_test(NAME ui_model COMMAND test_ui_model)
+add_test(NAME i18n COMMAND test_i18n)
 add_test(NAME codec COMMAND test_codec)
 
 # Startpos perft gate (Task 3): no castling/ep-capture/promotion occurs

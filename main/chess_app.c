@@ -11,6 +11,7 @@
 #include "chess_board_draw.h"
 #include "chess_core.h"
 #include "chess_font.h"
+#include "chess_i18n.h"
 #include "chess_storage.h"
 #include "chess_ui.h"
 #include "chess_ui_model.h"
@@ -59,6 +60,11 @@ static chess_move s_last_move;
 static bool s_has_last_move;
 static chess_view s_view;
 static chess_save s_scratch;
+static chess_language s_language = CHESS_LANGUAGE_ENGLISH;
+
+static const char *app_text(chess_text_id text) {
+    return chess_i18n_get(s_language, text);
+}
 
 /* Forward declarations: input/render paths precede their helpers. */
 static const char *level_name(chess_ai_level level);
@@ -77,17 +83,17 @@ static unsigned s_home_idx;
 static const char *cmd_label(chess_ui_cmd cmd) {
     switch (cmd) {
     case CHESS_CMD_RESUME:
-        return "Resume";
+        return app_text(CHESS_TEXT_RESUME);
     case CHESS_CMD_CLAIM_CURRENT:
-        return "Claim draw";
+        return app_text(CHESS_TEXT_CLAIM_DRAW);
     case CHESS_CMD_CLAIM_PRESELECT:
-        return "Claim selected";
+        return app_text(CHESS_TEXT_CLAIM_SELECTED);
     case CHESS_CMD_RESIGN:
-        return "Resign";
+        return app_text(CHESS_TEXT_RESIGN);
     case CHESS_CMD_NEW_GAME:
-        return "New game";
+        return app_text(CHESS_TEXT_NEW_GAME);
     case CHESS_CMD_GO_HOME:
-        return "Home";
+        return app_text(CHESS_TEXT_GO_HOME);
     default:
         return "?";
     }
@@ -138,17 +144,38 @@ static void build_header_footer(void) {
     char sel[32];
     static char pbuf[8];
 
-    if (soc < 0) {
-        snprintf(s_view.header, sizeof(s_view.header), "%s to move   --   %s",
-                 pos->side_to_move == CHESS_WHITE ? "White" : "Black",
-                 s_saved ? "saved" : "UNSAVED");
+    if (s_language == CHESS_LANGUAGE_CHINESE) {
+        if (soc < 0) {
+            snprintf(s_view.header, sizeof(s_view.header), "%s%s %s",
+                     app_text(pos->side_to_move == CHESS_WHITE ? CHESS_TEXT_WHITE
+                                                               : CHESS_TEXT_BLACK),
+                     app_text(CHESS_TEXT_TO_MOVE),
+                     app_text(s_saved ? CHESS_TEXT_SAVED : CHESS_TEXT_UNSAVED));
+        } else {
+            snprintf(s_view.header, sizeof(s_view.header), "%s%s %d%% %s",
+                     app_text(pos->side_to_move == CHESS_WHITE ? CHESS_TEXT_WHITE
+                                                               : CHESS_TEXT_BLACK),
+                     app_text(CHESS_TEXT_TO_MOVE), soc,
+                     app_text(s_saved ? CHESS_TEXT_SAVED : CHESS_TEXT_UNSAVED));
+        }
     } else {
-        snprintf(s_view.header, sizeof(s_view.header), "%s to move   %d%%   %s",
-                 pos->side_to_move == CHESS_WHITE ? "White" : "Black", soc,
-                 s_saved ? "saved" : "UNSAVED");
+        if (soc < 0) {
+            snprintf(s_view.header, sizeof(s_view.header), "%s %s -- %s",
+                     app_text(pos->side_to_move == CHESS_WHITE ? CHESS_TEXT_WHITE
+                                                               : CHESS_TEXT_BLACK),
+                     app_text(CHESS_TEXT_TO_MOVE),
+                     app_text(s_saved ? CHESS_TEXT_SAVED : CHESS_TEXT_UNSAVED));
+        } else {
+            snprintf(s_view.header, sizeof(s_view.header), "%s %s %d%% %s",
+                     app_text(pos->side_to_move == CHESS_WHITE ? CHESS_TEXT_WHITE
+                                                               : CHESS_TEXT_BLACK),
+                     app_text(CHESS_TEXT_TO_MOVE), soc,
+                     app_text(s_saved ? CHESS_TEXT_SAVED : CHESS_TEXT_UNSAVED));
+        }
     }
     if (s_thinking) {
-        snprintf(s_view.header, sizeof(s_view.header), "Thinking... %s",
+        snprintf(s_view.header, sizeof(s_view.header), "%s %s",
+                 app_text(CHESS_TEXT_THINKING),
                  level_name(s_difficulty));
     }
 
@@ -181,11 +208,11 @@ static void build_header_footer(void) {
     if (s_note[0] != '\0') {
         snprintf(s_view.footer, sizeof(s_view.footer), "%s\n%s", sel, s_note);
     } else if (s_model.screen == CHESS_SCREEN_PROMOTION) {
-        snprintf(s_view.footer, sizeof(s_view.footer), "%s\nUP/DOWN piece",
-                 sel);
+        snprintf(s_view.footer, sizeof(s_view.footer), "%s\n%s", sel,
+                 app_text(CHESS_TEXT_PROMOTION_HINT));
     } else {
-        snprintf(s_view.footer, sizeof(s_view.footer), "%s\nUP/DOWN OK LONG",
-                 sel);
+        snprintf(s_view.footer, sizeof(s_view.footer), "%s\n%s", sel,
+                 app_text(CHESS_TEXT_MOVE_HINT));
     }
 }
 
@@ -245,6 +272,7 @@ static void render_all(void) {
         ESP_LOGE(TAG, "render without LVGL lock");
         return;
     }
+    s_view.language = s_language;
     if (s_screen == APP_BOARD || s_model.screen == CHESS_SCREEN_PAUSE ||
         s_model.screen == CHESS_SCREEN_CONFIRM) {
         if (s_model.screen == CHESS_SCREEN_SELECT_PIECE ||
@@ -258,7 +286,8 @@ static void render_all(void) {
             s_view.screen = CHESS_VIEW_PAUSE;
         } else if (s_model.screen == CHESS_SCREEN_CONFIRM) {
             snprintf(s_view.confirm_action, sizeof(s_view.confirm_action),
-                     "%s?", cmd_label(s_model.confirm_action));
+                     "%s%s", cmd_label(s_model.confirm_action),
+                     s_language == CHESS_LANGUAGE_CHINESE ? "？" : "?");
             s_view.confirm_yes = s_model.confirm_yes;
             s_view.screen = CHESS_VIEW_CONFIRM;
         } else {
@@ -268,34 +297,38 @@ static void render_all(void) {
         }
     } else if (s_screen == APP_HOME) {
         if (s_home_mode == 0) {
-            s_view.menu[0] = "Continue";
-            s_view.menu[1] = "New 2-player";
-            s_view.menu[2] = "New vs AI";
-            s_view.nmenu = 3;
+            s_view.menu[0] = app_text(CHESS_TEXT_CONTINUE);
+            s_view.menu[1] = app_text(CHESS_TEXT_NEW_LOCAL);
+            s_view.menu[2] = app_text(CHESS_TEXT_NEW_AI);
+            s_view.menu[3] = app_text(CHESS_TEXT_LANGUAGE);
+            s_view.nmenu = 4;
         } else {
-            s_view.menu[0] = "Easy";
-            s_view.menu[1] = "Normal";
-            s_view.menu[2] = "Hard";
+            s_view.menu[0] = app_text(CHESS_TEXT_EASY);
+            s_view.menu[1] = app_text(CHESS_TEXT_NORMAL);
+            s_view.menu[2] = app_text(CHESS_TEXT_HARD);
             s_view.nmenu = 3;
         }
         s_view.menu_idx = s_home_idx;
         s_view.screen = CHESS_VIEW_HOME;
     } else {
         chess_status st = chess_game_status(&s_game);
-        snprintf(s_view.over, sizeof(s_view.over), "%s",
-                 st == CHESS_STATUS_CHECKMATE_WHITE_WINS   ? "White wins"
-                 : st == CHESS_STATUS_CHECKMATE_BLACK_WINS ? "Black wins"
-                 : st == CHESS_STATUS_STALEMATE            ? "Stalemate"
-                 : st == CHESS_STATUS_DRAW_DEAD            ? "Dead position"
-                 : st == CHESS_STATUS_DRAW_FIVEFOLD        ? "Fivefold draw"
-                 : st == CHESS_STATUS_DRAW_SEVENTY_FIVE    ? "75-move draw"
-                 : st == CHESS_STATUS_DRAW_CLAIMED_THREEFOLD
-                     ? "Draw claimed"
-                 : st == CHESS_STATUS_DRAW_CLAIMED_FIFTY ? "Draw claimed"
-                 : st == CHESS_STATUS_DRAW_AGREED       ? "Draw agreed"
-                 : st == CHESS_STATUS_RESIGN_WHITE_WINS ? "White wins"
-                 : st == CHESS_STATUS_RESIGN_BLACK_WINS ? "Black wins"
-                                                        : "Game over");
+        chess_text_id outcome =
+            st == CHESS_STATUS_CHECKMATE_WHITE_WINS ||
+                    st == CHESS_STATUS_RESIGN_WHITE_WINS
+                ? CHESS_TEXT_WHITE_WINS
+            : st == CHESS_STATUS_CHECKMATE_BLACK_WINS ||
+                      st == CHESS_STATUS_RESIGN_BLACK_WINS
+                ? CHESS_TEXT_BLACK_WINS
+            : st == CHESS_STATUS_STALEMATE ? CHESS_TEXT_STALEMATE
+            : st == CHESS_STATUS_DRAW_DEAD ? CHESS_TEXT_DEAD_POSITION
+            : st == CHESS_STATUS_DRAW_FIVEFOLD ? CHESS_TEXT_FIVEFOLD_DRAW
+            : st == CHESS_STATUS_DRAW_SEVENTY_FIVE ? CHESS_TEXT_SEVENTY_FIVE_DRAW
+            : st == CHESS_STATUS_DRAW_CLAIMED_THREEFOLD ||
+                      st == CHESS_STATUS_DRAW_CLAIMED_FIFTY
+                ? CHESS_TEXT_DRAW_CLAIMED
+            : st == CHESS_STATUS_DRAW_AGREED ? CHESS_TEXT_DRAW_AGREED
+                                             : CHESS_TEXT_GAME_OVER;
+        snprintf(s_view.over, sizeof(s_view.over), "%s", app_text(outcome));
         s_view.screen = CHESS_VIEW_OVER;
     }
     chess_ui_render(&s_view);
@@ -307,7 +340,7 @@ static bool persist_game(void) {
     memset(save, 0, sizeof(*save));
     save->game = s_game;
     save->settings.difficulty = CHESS_DIFF_MEDIUM;
-    save->settings.language = 0;
+    save->settings.language = (uint8_t)s_language;
     save->settings.brightness = 80;
     save->mode = s_mode;
     save->human_color = CHESS_WHITE;
@@ -315,7 +348,7 @@ static bool persist_game(void) {
     if (!s_backend_ready ||
         chess_save_store(&s_backend, save) != CHESS_OK) {
         s_saved = false;
-        snprintf(s_note, sizeof(s_note), "save failed");
+        snprintf(s_note, sizeof(s_note), "%s", app_text(CHESS_TEXT_SAVE_FAILED));
         return false;
     }
     s_seq++;
@@ -348,11 +381,11 @@ static void start_ai_game(chess_ai_level level) {
 static const char *level_name(chess_ai_level level) {
     switch (level) {
     case CHESS_AI_EASY:
-        return "Easy";
+        return app_text(CHESS_TEXT_EASY);
     case CHESS_AI_NORMAL:
-        return "Normal";
+        return app_text(CHESS_TEXT_NORMAL);
     case CHESS_AI_HARD:
-        return "Hard";
+        return app_text(CHESS_TEXT_HARD);
     default:
         return "?";
     }
@@ -429,7 +462,8 @@ static bool drain_ai_results(void) {
             res.has_fallback) {
             if (chess_ai_apply_checked(&s_game, res.fallback, res.generation,
                                        s_generation) == CHESS_OK) {
-                snprintf(s_note, sizeof(s_note), "AI fallback");
+                snprintf(s_note, sizeof(s_note), "%s",
+                         app_text(CHESS_TEXT_AI_FALLBACK));
                 after_move_applied(res.fallback);
                 continue;
             }
@@ -467,7 +501,7 @@ static void handle_command(chess_ui_command cmd) {
         if (err == CHESS_OK) {
             after_move_applied(cmd.move);
         } else {
-            snprintf(s_note, sizeof(s_note), "rejected");
+            snprintf(s_note, sizeof(s_note), "%s", app_text(CHESS_TEXT_REJECTED));
         }
         break;
     case CHESS_CMD_CLAIM_CURRENT:
@@ -476,7 +510,7 @@ static void handle_command(chess_ui_command cmd) {
             persist_game();
             s_screen = APP_OVER;
         } else {
-            snprintf(s_note, sizeof(s_note), "no claim");
+            snprintf(s_note, sizeof(s_note), "%s", app_text(CHESS_TEXT_NO_CLAIM));
         }
         break;
     case CHESS_CMD_CLAIM_PRESELECT:
@@ -485,7 +519,7 @@ static void handle_command(chess_ui_command cmd) {
             persist_game();
             s_screen = APP_OVER;
         } else {
-            snprintf(s_note, sizeof(s_note), "no claim");
+            snprintf(s_note, sizeof(s_note), "%s", app_text(CHESS_TEXT_NO_CLAIM));
         }
         break;
     case CHESS_CMD_RESIGN:
@@ -528,6 +562,7 @@ static void boot_load(void) {
     err = chess_save_load(&s_backend, save);
     if (err == CHESS_OK) {
         s_game = save->game;
+        s_language = chess_i18n_normalize(save->settings.language);
         s_seq = save->seq + 1;
         s_saved = true;
         s_mode = (save->mode == CHESS_MODE_AI) ? CHESS_MODE_AI
@@ -583,7 +618,7 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
         return;
     }
     if (s_screen == APP_HOME) {
-        /* Main list: Continue / New 2P / New AI. Difficulty list
+        /* Main list: Continue / New 2P / New AI / Language. Difficulty list
          * after New AI. LONG always lands safely on continue. */
         if (s_home_mode == 0) {
             if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
@@ -594,10 +629,15 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
                     s_home_idx = 0;
                     render_all();
                     return;
+                } else if (s_home_idx == 3) {
+                    s_language = chess_i18n_toggle((uint8_t)s_language);
+                    persist_game();
+                    render_all();
+                    return;
                 }
                 s_screen = APP_BOARD;
             } else if (ev == BSP_BTN_CLICK) {
-                s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 2u)) % 3u;
+                s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 3u)) % 4u;
             } else if (ev == BSP_BTN_LONG) {
                 s_screen = APP_BOARD;
             } else {
@@ -653,6 +693,7 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
         if (s_backend_ready &&
             chess_save_load_compat(&s_backend, save) == CHESS_OK) {
             s_game = save->game;
+            s_language = chess_i18n_normalize(save->settings.language);
             s_seq = save->seq + 1;
             s_saved = true;
             s_generation++;
@@ -722,7 +763,8 @@ void chess_app_start(void) {
                  * until the worker lands. */
                 s_cancel_await = false;
                 s_cancel_blocked = true;
-                snprintf(s_note, sizeof(s_note), "cancel slow");
+                snprintf(s_note, sizeof(s_note), "%s",
+                         app_text(CHESS_TEXT_CANCEL_SLOW));
                 render_all();
             }
             continue;

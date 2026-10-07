@@ -2,8 +2,8 @@
  * and rebuilds the active screen. Call with the LVGL lock held.
  * Screens: BOARD (header + board + footer), PAUSE (menu list),
  * CONFIRM (cancel/confirm), OVER (result + hints), ERROR (code +
- * retry/new/back), HOME (continue/new). All strings English for the
- * M1 bring-up; Chinese strings + subset font before V0 (TODO i18n).
+ * retry/new/back), HOME (continue/new local/new AI/language). Text is selected by
+ * language; model and chess rules remain locale-neutral.
  */
 #ifndef CHESS_UI_H
 #define CHESS_UI_H
@@ -14,6 +14,7 @@
 
 #include "chess_board_draw.h"
 #include "chess_core.h"
+#include "chess_i18n.h"
 #include "chess_ui_model.h"
 
 #define CHESS_MENU_MAX 6
@@ -31,6 +32,7 @@ typedef enum chess_view_screen {
 
 typedef struct chess_view {
     chess_view_screen screen;
+    chess_language language;
     chess_snapshot snapshot; /* BOARD only */
     char header[CHESS_TEXT_HEADER];
     char footer[CHESS_TEXT_FOOTER];

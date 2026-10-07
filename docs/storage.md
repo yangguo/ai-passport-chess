@@ -12,7 +12,7 @@ M1 一局一档及少量设置；使用独立 namespace `chess_v1`，不碰无�
 | position | 32 bytes nibble board、side、rights、raw ep、u16 halfmove、u32 fullmove |
 | game | mode、human_color、result/reason、history_count、不可逆边界标识 |
 | history | 最多151个34-byte规范化局面，包含当前局面 |
-| settings | 难度、语言、亮度；枚举未知值使用兼容默认 |
+| settings | 难度、语言（0 英文、1 简体中文）、亮度；未知语言按英文兼容 |
 
 raw ep 用于 FEN，历史 ep 采用 core 合法可吃标准；两者不得混淆。预算单槽 ≤6KiB，A/B ≤12KiB 逻辑数据，24KiB NVS 是否有足够日志/GC空间必须在最大存档下实测。超过长度立即报容量错误，不能截断历史来凑。后续悔棋/多档需重新预算或扩大分区。
 
@@ -28,7 +28,7 @@ sequence 使用 u64；接近最大值停止自动保存并提示维护，不无�
 
 ## 何时保存
 
-落子、申报/认输终局、设置确认、用户返回首页触发 dirty snapshot；导航不保存。合并待保存事件，最大目标延迟1s；UI 显示“保存中/已保存/未保存”。Flash 写阻塞发生在 storage worker，搜索与写入先串行调度；保存中按键仍处理，完成消息按序号核验。
+落子、申报/认输终局、语言切换、用户返回首页触发保存。语言沿用现有 settings 字节，不变更 schema；旧档的 0 值保持英文。Flash 写阻塞发生在 storage worker，搜索与写入先串行调度；保存中按键仍处理，完成消息按序号核验。
 
 若用户紧接落子硬关机，最新着可能尚未提交；不能宣称每步无条件掉电不丢。主动睡眠必须先确认保存完成，失败保持唤醒并提示；硬件电源键没有“退出时一定保存”的保证。
 
