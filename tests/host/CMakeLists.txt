@@ -61,6 +61,11 @@ target_include_directories(test_ui_model PRIVATE
 add_executable(test_i18n test_i18n.c ${I18N_DIR}/chess_i18n.c)
 target_include_directories(test_i18n PRIVATE ${I18N_DIR}/include)
 
+set(POWER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_power)
+add_executable(test_power test_power.c ${POWER_DIR}/chess_power.c)
+target_include_directories(test_power PRIVATE ${POWER_DIR}/include)
+add_test(NAME power COMMAND test_power)
+
 set(STORAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_storage)
 add_executable(test_codec test_codec.c ${CORE_SOURCES}
   ${CORE_DIR}/chess_game.c
@@ -101,3 +106,25 @@ if(PYTHON3_BIN)
       --cases ${CMAKE_CURRENT_SOURCE_DIR}/../perft/cases.json
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif()
+
+# Real application state transitions; doubles only at ESP/LVGL/task boundaries.
+add_executable(test_app test_app.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c
+  ${MODEL_DIR}/chess_ui_model.c ${I18N_DIR}/chess_i18n.c
+  ${POWER_DIR}/chess_power.c
+  ${STORAGE_DIR}/chess_codec.c ${STORAGE_DIR}/chess_nvs.c
+  ${AI_DIR}/chess_ai.c ${ENGINE_DIR}/mcu-max.c)
+target_include_directories(test_app PRIVATE app_stubs
+  ../../main ../../components/bsp/include ${CORE_DIR}/include
+  ${POWER_DIR}/include
+  ${MODEL_DIR}/include ${I18N_DIR}/include ${STORAGE_DIR}/include
+  ${AI_DIR}/include ${ENGINE_DIR})
+add_test(NAME app COMMAND test_app)
+
+add_executable(test_board_layout test_board_layout.c)
+target_include_directories(test_board_layout PRIVATE ../../main ${CORE_DIR}/include)
+add_test(NAME board_layout COMMAND test_board_layout)
+
+add_executable(test_board_render test_board_render.c ${CORE_SOURCES})
+target_include_directories(test_board_render PRIVATE app_stubs ../../main
+  ${CORE_DIR}/include ${I18N_DIR}/include)
+add_test(NAME board_render COMMAND test_board_render)

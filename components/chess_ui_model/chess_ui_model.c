@@ -95,6 +95,7 @@ static void rebuild_pause(chess_ui_model *m) {
   m->pause_items[m->npause++] = CHESS_CMD_RESIGN;
   m->pause_items[m->npause++] = CHESS_CMD_NEW_GAME;
   m->pause_items[m->npause++] = CHESS_CMD_GO_HOME;
+  m->pause_items[m->npause++] = CHESS_CMD_BRIGHTNESS;
   m->pause_idx = 0;
 }
 
@@ -272,6 +273,9 @@ static void on_ok_pause(chess_ui_model *m, chess_ui_command *out) {
   case CHESS_CMD_GO_HOME:
     out->kind = CHESS_CMD_GO_HOME;
     to_piece_screen(m);
+    return;
+  case CHESS_CMD_BRIGHTNESS:
+    out->kind = CHESS_CMD_BRIGHTNESS;
     return;
   default:
     return;

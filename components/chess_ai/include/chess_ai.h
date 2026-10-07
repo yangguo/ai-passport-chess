@@ -80,7 +80,8 @@ void chess_ai_level_budgets(chess_ai_level level, uint32_t *deadline_ms,
 
 /* Run a bounded, cancellable search synchronously (caller = worker
  * task). Installs the engine callback, maps and core-validates the
- * reply. Timeout/cancel/invalid produce the matching outcome with no
+ * reply. A deadline returns OK when a completed, legal search result
+ * exists. Timeout without such a result, cancel, or invalid reply has no
  * best move; a fallback is still provided unless cancelled. */
 void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req);
 

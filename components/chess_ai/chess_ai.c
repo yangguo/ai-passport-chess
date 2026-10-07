@@ -19,14 +19,14 @@ void chess_ai_level_budgets(chess_ai_level level, uint32_t *deadline_ms,
         *depth_max = 6u;
         break;
     case CHESS_AI_HARD:
-        *deadline_ms = 1000u;
-        *node_max = 4000000u;
+        *deadline_ms = 5000u;
+        *node_max = 20000000u;
         *depth_max = 12u;
         break;
     case CHESS_AI_NORMAL:
     default:
-        *deadline_ms = 300u;
-        *node_max = 1000000u;
+        *deadline_ms = 1500u;
+        *node_max = 5000000u;
         *depth_max = 8u;
         break;
     }
@@ -208,10 +208,8 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
         job->outcome = timed_out ? CHESS_AI_TIMEOUT : CHESS_AI_ENGINE_ERROR;
         return;
     }
-    if (timed_out) {
-        job->outcome = CHESS_AI_TIMEOUT;
-        return;
-    }
+    /* A deadline with a validated completed-iteration result is normal.
+     * Only a deadline before any usable result requires fallback. */
     if (req->level == CHESS_AI_EASY && count > 1) {
         uint32_t rng = req->easy_seed;
         uint32_t roll = easy_rng_next(&rng) % 100u;

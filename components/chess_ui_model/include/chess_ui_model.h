@@ -50,7 +50,8 @@ typedef enum chess_ui_cmd {
   CHESS_CMD_GO_HOME = 6,
   CHESS_CMD_RESUME = 7,
   CHESS_CMD_ERROR_RETRY = 8,
-  CHESS_CMD_ERROR_BACK = 9
+  CHESS_CMD_ERROR_BACK = 9,
+  CHESS_CMD_BRIGHTNESS = 10
 } chess_ui_cmd;
 
 typedef struct chess_ui_command {
@@ -60,7 +61,7 @@ typedef struct chess_ui_command {
 
 #define CHESS_MODEL_MAX_MOVES 256u
 #define CHESS_MODEL_MAX_CANDIDATES 64u
-#define CHESS_MODEL_MAX_PAUSE_ITEMS 6u
+#define CHESS_MODEL_MAX_PAUSE_ITEMS 7u
 
 typedef struct chess_ui_model {
   chess_ui_screen screen;

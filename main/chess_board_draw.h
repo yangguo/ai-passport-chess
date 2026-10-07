@@ -1,7 +1,7 @@
 /* Board snapshot renderer (Task 8): one LVGL object, one draw event,
  * absolute coordinates. The draw callback only reads the snapshot;
  * the app updates it under the LVGL lock, then invalidates.
- * Layout: board origin (0,30), 30px cells, white at the bottom.
+ * Layout: board origin (0,30), 30px cells, the chosen player at the bottom.
  * Pieces are procedural LVGL primitives (no Flash assets for M1):
  * silhouettes differ by shape family so knight/bishop stay apart.
  */
@@ -25,6 +25,7 @@ typedef struct chess_snapshot {
     uint8_t last_from;
     uint8_t last_to;       /* CHESS_NO_SQUARE when no last move */
     chess_color side;
+    chess_color bottom; /* stable perspective, independent of side-to-move */
 } chess_snapshot;
 
 /* Build the board widget once; later snapshots go through update. */

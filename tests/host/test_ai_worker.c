@@ -69,9 +69,9 @@ static void test_budgets_sane(void) {
     chess_ai_level_budgets(CHESS_AI_EASY, &ms, &nodes, &depth);
     CHECK(ms == 100u);
     chess_ai_level_budgets(CHESS_AI_NORMAL, &ms, &nodes, &depth);
-    CHECK(ms == 300u);
+    CHECK(ms == 1500u);
     chess_ai_level_budgets(CHESS_AI_HARD, &ms, &nodes, &depth);
-    CHECK(ms == 1000u);
+    CHECK(ms == 5000u);
     chess_ai_level_budgets(CHESS_AI_NORMAL, NULL, NULL, NULL);
 }
 
@@ -132,6 +132,45 @@ static void test_timeout_keeps_fallback(void) {
     CHECK(job.outcome == CHESS_AI_TIMEOUT);
     CHECK(!job.has_best);
     CHECK(job.has_fallback);
+}
+
+/* A normal deadline is the end of iterative deepening, not an engine
+ * failure. Keep the completed tactical result instead of legal[0]. */
+static void test_deadline_keeps_searched_capture(void) {
+    chess_ai_request req;
+    chess_ai_job job;
+    fake_clock clock;
+    chess_position probe;
+    chess_undo undo;
+    memset(&clock, 0, sizeof(clock));
+    memset(&job, 0, sizeof(job));
+    make_request(&req, "6k1/8/8/8/4q3/8/8/4R1K1 w - - 0 1",
+                 CHESS_AI_NORMAL, &clock);
+    req.deadline_ms = 5000;
+    req.node_max = 100000000;
+    req.depth_max = 30;
+    clock.step_per_callback = 1;
+    job.clock = fake_now;
+    job.clock_ctx = &clock;
+    chess_ai_run_job(&job, &req);
+    CHECK(clock.now >= job.deadline_at_ms);
+    CHECK(job.outcome == CHESS_AI_OK);
+    CHECK(job.has_best);
+    if (job.has_best) {
+        CHECK(job.best.from == 4 && job.best.to == 28); /* Rxe4 */
+        probe = req.position;
+        CHECK(chess_make(&probe, job.best, &undo) == CHESS_OK);
+    }
+    /* A new search stopped immediately must not reuse this checkpoint. */
+    memset(&job, 0, sizeof(job));
+    memset(&clock, 0, sizeof(clock));
+    clock.step_per_callback = 1;
+    req.deadline_ms = 0;
+    job.clock = fake_now;
+    job.clock_ctx = &clock;
+    chess_ai_run_job(&job, &req);
+    CHECK(job.outcome == CHESS_AI_TIMEOUT);
+    CHECK(!job.has_best && job.has_fallback);
 }
 
 static void test_cancel_before_search(void) {
@@ -280,10 +319,15 @@ static void test_apply_checked(void) {
     CHECK(chess_ai_apply_checked(&game, m, 7, 7) == CHESS_ERR_GAME_OVER);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--deadline-only") == 0) {
+        test_deadline_keeps_searched_capture();
+        return failures != 0;
+    }
     test_budgets_sane();
     test_ok_search();
     test_timeout_keeps_fallback();
+    test_deadline_keeps_searched_capture();
     test_cancel_before_search();
     test_cancel_mid_search();
     test_no_move_terminal();

@@ -17,7 +17,7 @@
 #include "chess_i18n.h"
 #include "chess_ui_model.h"
 
-#define CHESS_MENU_MAX 6
+#define CHESS_MENU_MAX 7
 #define CHESS_TEXT_HEADER 48
 #define CHESS_TEXT_FOOTER 96
 
@@ -27,7 +27,8 @@ typedef enum chess_view_screen {
     CHESS_VIEW_CONFIRM,
     CHESS_VIEW_OVER,
     CHESS_VIEW_ERROR,
-    CHESS_VIEW_HOME
+    CHESS_VIEW_HOME,
+    CHESS_VIEW_BRIGHTNESS
 } chess_view_screen;
 
 typedef struct chess_view {
@@ -45,6 +46,7 @@ typedef struct chess_view {
     bool confirm_yes;
     char over[CHESS_TEXT_HEADER];
     uint16_t error_code;
+    uint8_t brightness;
 } chess_view;
 
 void chess_ui_render(const chess_view *view);

@@ -4,7 +4,8 @@
 
 - Upstream: https://github.com/Gissio/mcu-max
 - Pinned commit: `aa03caffce50729566b5db6965bf735c31f33eea`
-- Files (verbatim, no local patches): `mcu-max.h`, `mcu-max.c`, `LICENSE`
+- Files: `mcu-max.h`, `LICENSE` unchanged; `mcu-max.c` includes the local
+  completed-iteration deadline patch described below.
 - License: MIT, (c) 2022-2025 Gissio — full text in `LICENSE`, keep it
   on every import or firmware release build
 
@@ -56,3 +57,20 @@ Callback frequency under time pressure, stack depth at depth_max on
 ESP32-C3, worst-case nodes-per-deadline calibration, and the
 generation check for stale results are unverified on-device. Never
 ship an unverified AI path.
+
+## Local patch 2026-10-07: retain completed search on deadline
+
+The pinned engine previously returned an invalid move when its callback
+stopped a search before the final replay phase. The adapter then discarded
+any deadline result and the app used the first core-legal move.
+
+The patch records the best move after each fully completed root iteration
+(at internal depth >= 3), resets it for every search, and returns that
+checkpoint on stop. Interrupted recursion unwinds after restoring the
+board; partial iterations never replace the checkpoint. The adapter still
+validates the result through core. User cancellation always discards it.
+No hash table, allocation, public engine API, or depth-limit change.
+
+Regression: real engine + deterministic clock at a deadline must retain
+Rxe4 against an exposed queen; expiration before a completed iteration
+still falls back, and user cancellation never plays a move.
