@@ -13,9 +13,10 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
-/* 8 KiB — see docs/performance.md; verify task stack units + high
- * water on device before treating this as final. */
-#define AI_TASK_STACK 8192
+/* 16 KiB follows an on-device stack-protection fault in the core legality
+ * check after search. Treat this as a provisional floor until the device
+ * high-water mark is measured at every difficulty. */
+#define AI_TASK_STACK 16384
 #define AI_TASK_PRIORITY 3
 
 static const char *TAG = "chess-ai";
