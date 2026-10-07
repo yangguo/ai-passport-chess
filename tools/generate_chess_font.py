@@ -40,25 +40,25 @@ def main() -> None:
                 "--symbols",
                 "".join(symbols),
                 "--size",
-                "16",
+                "18",
                 "--bpp",
-                "2",
+                "4",
                 "--no-compress",
                 "--format",
                 "lvgl",
                 "--lv-include",
                 "lvgl.h",
                 "--lv-font-name",
-                "chess_font_noto_sc_16",
+                "chess_font_noto_sc_18",
                 "--lv-fallback",
                 "lv_font_montserrat_14",
                 "-o",
-                "assets/fonts/chess_zh_16.c",
+                "assets/fonts/chess_zh_18.c",
             ],
             cwd=ROOT,
             check=True,
         )
-        output = ROOT / "assets/fonts/chess_zh_16.c"
+        output = ROOT / "assets/fonts/chess_zh_18.c"
         output.write_text(output.read_text(encoding="utf-8").rstrip() + "\n",
                           encoding="utf-8")
     finally:

@@ -19,7 +19,7 @@
 
 ### Task 2: Chinese font asset and renderer localization
 
-**Files:** Create `assets/fonts/chess_zh_16.c`, `assets/fonts/OFL.txt`, `assets/SOURCES.md`; modify `main/chess_font.h`, `main/chess_ui.h`, `main/chess_ui.c`, `main/CMakeLists.txt`.
+**Files:** Create `assets/fonts/chess_zh_18.c`, `assets/fonts/OFL.txt`, `assets/SOURCES.md`; modify `main/chess_font.h`, `main/chess_ui.h`, `main/chess_ui.c`, `main/CMakeLists.txt`.
 
 1. Pin Noto Sans SC source and converter versions; generate only glyphs used by the UI.
 2. Select Chinese or English font from `chess_view.language` and translate renderer-owned labels.
