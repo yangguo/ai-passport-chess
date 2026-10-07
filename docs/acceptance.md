@@ -61,4 +61,4 @@ Gate逐项 PASS/FAIL/NOT RUN + 证据：
 - CI：[37570009022](https://github.com/yangguo/ai-passport-chess/actions/runs/37570009022) 的 host sanitizer、CLI 测试、ESP-IDF v5.5.3 构建及镜像检查全部 PASS。应用代码版本 `1edbd35809afbf15b7c946cab88e82e17e2a6b9f`，app 713,120 bytes，SHA256 `cea96a902d2bc67760c6a165b6b78adb3cb250d426235569bd18327fbbaacb07`。
 - 设备：刷写前重新读取实际分区表及 OTA 元数据，确认有效槽为 `ota_0`、地址 `0x20000`、容量 `0x2f0000`。仅更新应用，独立 digest 校验 PASS。串口确认版本 `1edbd35`、LCD/LVGL 及象棋应用就绪；5 秒采样无 panic 或重复 ROM 复位。
 - 配置保护：OTA 元数据逐字节不变。NVS 字节随游戏存档更新发生变化；活动条目对比确认变化仅限 `chess_v1/save_a`、`save_b`，非游戏配置活动条目保持一致。
-- 实机中文清晰度：用户确认新版字体已清楚，PASS。新版按原方式重启后的显示仍待单独确认，NOT RUN；完整显示/规则/长期稳定性 gate 不由本次字体检查替代。
+- 实机中文清晰度：用户确认新版字体已清楚，PASS；用户按原方式重启确认显示正常，PASS。完整显示/规则/长期稳定性 gate 不由本次字体检查替代。
