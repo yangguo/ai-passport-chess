@@ -140,8 +140,7 @@ static void draw_ball(lv_layer_t *layer, int cx, int cy, int r, uint32_t fill,
     draw_disc(layer, cx, cy, r - 1, fill);
 }
 
-/* Piece silhouettes inside one cell (ox, oy = top-left). W/B pick
- * fill/outline; each family has a distinct gesture. */
+/* Compact Staunton-inspired silhouettes sized for one 30px cell. */
 static void draw_piece(lv_layer_t *layer, unsigned sq) {
     chess_piece p = s_snap.cells[sq];
     uint32_t fill;
@@ -160,57 +159,90 @@ static void draw_piece(lv_layer_t *layer, unsigned sq) {
         line = PIECE_B_LINE;
     }
     switch (p.type) {
-    case CHESS_PAWN:
-        draw_line(layer, cx, oy + 22, cx, oy + 12, line, 4);
-        draw_ball(layer, cx, oy + 9, 4, fill, line);
-        draw_line(layer, cx - 6, oy + 23, cx + 6, oy + 23, line, 3);
-        break;
-    case CHESS_KNIGHT:
-        /* Angular jaw: upright head, muzzle forward, mane slash. */
-        draw_line(layer, cx - 4, oy + 22, cx - 4, oy + 10, line, 4);
-        draw_line(layer, cx - 4, oy + 10, cx + 6, oy + 13, line, 4);
-        draw_line(layer, cx + 6, oy + 13, cx + 2, oy + 18, line, 3);
-        draw_line(layer, cx - 7, oy + 8, cx + 1, oy + 20, fill, 3);
-        draw_ball(layer, cx + 6, oy + 9, 2, fill, line);
-        draw_line(layer, cx - 6, oy + 23, cx + 6, oy + 23, line, 3);
-        break;
-    case CHESS_BISHOP:
-        /* Mitre: tall body, vertical slit, top ball. */
-        draw_line(layer, cx, oy + 22, cx - 6, oy + 12, line, 3);
-        draw_line(layer, cx, oy + 22, cx + 6, oy + 12, line, 3);
-        draw_line(layer, cx - 6, oy + 12, cx + 6, oy + 12, line, 3);
-        draw_line(layer, cx, oy + 12, cx, oy + 17, fill, 2);
-        draw_ball(layer, cx, oy + 8, 3, fill, line);
-        draw_line(layer, cx - 6, oy + 23, cx + 6, oy + 23, line, 3);
-        break;
-    case CHESS_ROOK:
-        /* Battlements: three teeth on a body block. */
-        draw_line(layer, cx - 6, oy + 9, cx - 6, oy + 22, line, 3);
-        draw_line(layer, cx + 6, oy + 9, cx + 6, oy + 22, line, 3);
-        draw_line(layer, cx - 6, oy + 9, cx - 2, oy + 9, line, 4);
-        draw_line(layer, cx + 2, oy + 9, cx + 6, oy + 9, line, 4);
-        draw_line(layer, cx - 6, oy + 22, cx + 6, oy + 22, line, 3);
-        draw_line(layer, cx - 6, oy + 16, cx + 6, oy + 16, fill, 2);
-        break;
-    case CHESS_QUEEN: {
-        /* Crown: three balls on stems over a wide base. */
-        int i;
-        for (i = -1; i <= 1; i++) {
-            draw_line(layer, cx + i * 6, oy + 20, cx + i * 6, oy + 11, line, 3);
-            draw_ball(layer, cx + i * 6, oy + 9, 2, fill, line);
-        }
-        draw_line(layer, cx - 7, oy + 20, cx + 7, oy + 20, line, 3);
-        draw_line(layer, cx - 5, oy + 23, cx + 5, oy + 23, line, 3);
+    case CHESS_PAWN: {
+        /* Rounded head, collar, tapered stem and stepped pedestal. */
+        draw_ball(layer, cx, oy + 8, 4, fill, line);
+        draw_line(layer, cx - 3, oy + 13, cx + 3, oy + 13, line, 3);
+        draw_line(layer, cx - 2, oy + 15, cx + 2, oy + 15, line, 3);
+        draw_line(layer, cx - 2, oy + 15, cx - 4, oy + 21, line, 3);
+        draw_line(layer, cx + 2, oy + 15, cx + 4, oy + 21, line, 3);
+        draw_line(layer, cx - 6, oy + 21, cx + 6, oy + 21, line, 3);
+        draw_line(layer, cx - 7, oy + 24, cx + 7, oy + 24, line, 3);
         break;
     }
-    case CHESS_KING:
-        /* Cross crown over a stem and base. */
-        draw_line(layer, cx, oy + 6, cx, oy + 14, line, 3);
-        draw_line(layer, cx - 3, oy + 9, cx + 3, oy + 9, line, 3);
-        draw_line(layer, cx, oy + 14, cx, oy + 20, line, 4);
-        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, line, 3);
-        draw_line(layer, cx - 5, oy + 23, cx + 5, oy + 23, line, 3);
+    case CHESS_KNIGHT: {
+        /* Horse profile facing right: ears, brow, muzzle, jaw and neck. */
+        draw_line(layer, cx - 5, oy + 21, cx - 5, oy + 13, line, 4);
+        draw_line(layer, cx - 5, oy + 13, cx - 8, oy + 8, line, 4);
+        draw_line(layer, cx - 8, oy + 8, cx - 4, oy + 5, line, 4);
+        draw_line(layer, cx - 4, oy + 5, cx - 1, oy + 8, line, 4);
+        draw_line(layer, cx - 1, oy + 8, cx + 5, oy + 8, line, 4);
+        draw_line(layer, cx + 5, oy + 8, cx + 8, oy + 10, line, 4);
+        draw_line(layer, cx + 8, oy + 10, cx + 6, oy + 13, line, 4);
+        draw_line(layer, cx + 6, oy + 13, cx + 2, oy + 14, line, 4);
+        draw_line(layer, cx + 2, oy + 14, cx + 1, oy + 18, line, 4);
+        draw_line(layer, cx + 1, oy + 18, cx + 5, oy + 21, line, 4);
+        draw_line(layer, cx - 5, oy + 15, cx + 1, oy + 19, fill, 2);
+        draw_disc(layer, cx + 2, oy + 10, 1, line);
+        draw_line(layer, cx - 7, oy + 22, cx + 7, oy + 22, line, 3);
+        draw_line(layer, cx - 8, oy + 25, cx + 8, oy + 25, line, 3);
         break;
+    }
+    case CHESS_BISHOP: {
+        /* Mitre point, rounded shoulders and the traditional diagonal slit. */
+        draw_ball(layer, cx, oy + 5, 2, fill, line);
+        draw_line(layer, cx, oy + 7, cx - 6, oy + 14, line, 4);
+        draw_line(layer, cx, oy + 7, cx + 6, oy + 14, line, 4);
+        draw_line(layer, cx - 6, oy + 14, cx - 3, oy + 19, line, 4);
+        draw_line(layer, cx + 6, oy + 14, cx + 3, oy + 19, line, 4);
+        draw_line(layer, cx - 3, oy + 19, cx + 3, oy + 19, line, 4);
+        draw_line(layer, cx - 2, oy + 11, cx + 2, oy + 15, fill, 2);
+        draw_line(layer, cx - 6, oy + 21, cx + 6, oy + 21, line, 3);
+        draw_line(layer, cx - 7, oy + 24, cx + 7, oy + 24, line, 3);
+        break;
+    }
+    case CHESS_ROOK: {
+        /* Castle tower with three merlons, narrowing shaft and broad base. */
+        draw_line(layer, cx - 7, oy + 5, cx - 3, oy + 5, line, 4);
+        draw_line(layer, cx + 3, oy + 5, cx + 7, oy + 5, line, 4);
+        draw_line(layer, cx - 1, oy + 5, cx + 1, oy + 5, line, 4);
+        draw_line(layer, cx - 7, oy + 5, cx - 7, oy + 9, line, 3);
+        draw_line(layer, cx - 2, oy + 5, cx - 2, oy + 9, line, 3);
+        draw_line(layer, cx + 2, oy + 5, cx + 2, oy + 9, line, 3);
+        draw_line(layer, cx + 7, oy + 5, cx + 7, oy + 9, line, 3);
+        draw_line(layer, cx - 7, oy + 9, cx - 5, oy + 19, line, 3);
+        draw_line(layer, cx + 7, oy + 9, cx + 5, oy + 19, line, 3);
+        draw_line(layer, cx - 5, oy + 14, cx + 5, oy + 14, fill, 2);
+        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, line, 3);
+        draw_line(layer, cx - 8, oy + 24, cx + 8, oy + 24, line, 3);
+        break;
+    }
+    case CHESS_QUEEN: {
+        /* Crown with five points and a flared, ringed coronet. */
+        draw_ball(layer, cx - 7, oy + 6, 2, fill, line);
+        draw_ball(layer, cx, oy + 4, 2, fill, line);
+        draw_ball(layer, cx + 7, oy + 6, 2, fill, line);
+        draw_line(layer, cx - 7, oy + 8, cx - 5, oy + 17, line, 3);
+        draw_line(layer, cx, oy + 6, cx - 3, oy + 17, line, 3);
+        draw_line(layer, cx, oy + 6, cx + 3, oy + 17, line, 3);
+        draw_line(layer, cx + 7, oy + 8, cx + 5, oy + 17, line, 3);
+        draw_line(layer, cx - 5, oy + 17, cx + 5, oy + 17, line, 3);
+        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, line, 3);
+        draw_line(layer, cx - 8, oy + 24, cx + 8, oy + 24, line, 3);
+        break;
+    }
+    case CHESS_KING: {
+        /* Cross atop a taller, rounded crown and stepped royal base. */
+        draw_line(layer, cx, oy + 4, cx, oy + 11, line, 3);
+        draw_line(layer, cx - 3, oy + 7, cx + 3, oy + 7, line, 3);
+        draw_line(layer, cx - 4, oy + 13, cx - 6, oy + 19, line, 3);
+        draw_line(layer, cx + 4, oy + 13, cx + 6, oy + 19, line, 3);
+        draw_line(layer, cx - 4, oy + 13, cx + 4, oy + 13, line, 3);
+        draw_line(layer, cx - 6, oy + 19, cx + 6, oy + 19, line, 3);
+        draw_line(layer, cx - 7, oy + 22, cx + 7, oy + 22, line, 3);
+        draw_line(layer, cx - 8, oy + 25, cx + 8, oy + 25, line, 3);
+        break;
+    }
     default:
         break;
     }
