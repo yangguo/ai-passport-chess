@@ -16,6 +16,14 @@ typedef struct slot_view {
   chess_save save;   /* valid only when decodes */
 } slot_view;
 
+/* Storage operations are serialized by the application owner. Keep the
+ * large fixed-capacity temporaries here instead of consuming an ESP task
+ * stack (one chess_save is several KiB). These helpers are not reentrant. */
+static slot_view s_views[2];
+static chess_save s_decoded;
+static chess_save s_staged;
+static chess_save s_verify;
+
 static bool parse_envelope_seq(const uint8_t *buf, size_t len,
                                uint64_t *seq) {
   uint32_t payload_len;
@@ -60,12 +68,11 @@ static chess_error scan_slot(chess_nvs_backend *be, int slot,
   }
   view->present = true;
   {
-    chess_save save;
-    err = chess_save_decode(raw, len, &save);
+    err = chess_save_decode(raw, len, &s_decoded);
     if (err == CHESS_OK) {
       view->decodes = true;
-      view->seq = save.seq;
-      view->save = save;
+      view->seq = s_decoded.seq;
+      view->save = s_decoded;
       return CHESS_OK;
     }
     if (err == CHESS_ERR_UNKNOWN_VERSION &&
@@ -88,7 +95,7 @@ static chess_error scan_both(chess_nvs_backend *be, slot_view views[2]) {
 
 static chess_error load_impl(chess_nvs_backend *be, chess_save *save,
                              bool compat) {
-  slot_view views[2];
+  slot_view *views = s_views;
   chess_error err;
   int best = -1;
   bool saw_unknown = false;
@@ -145,7 +152,7 @@ chess_error chess_save_load_compat(chess_nvs_backend *be, chess_save *save) {
 chess_error chess_save_store(chess_nvs_backend *be, const chess_save *save) {
   static uint8_t image[CHESS_SAVE_SLOT_MAX];
   static uint8_t check[CHESS_SAVE_SLOT_MAX];
-  slot_view views[2];
+  slot_view *views = s_views;
   chess_error err;
   uint64_t best_seq = 0;
   bool have_seq = false;
@@ -155,7 +162,7 @@ chess_error chess_save_store(chess_nvs_backend *be, const chess_save *save) {
   size_t len = 0;
   size_t check_len = 0;
   int s;
-  chess_save staged;
+  chess_save *staged = &s_staged;
 
   if (be == NULL || save == NULL) {
     return CHESS_ERR_NULL;
@@ -210,9 +217,9 @@ chess_error chess_save_store(chess_nvs_backend *be, const chess_save *save) {
   if (save->seq > seq) {
     seq = save->seq;
   }
-  staged = *save;
-  staged.seq = seq;
-  err = chess_save_encode(&staged, image, sizeof(image), &len);
+  *staged = *save;
+  staged->seq = seq;
+  err = chess_save_encode(staged, image, sizeof(image), &len);
   if (err != CHESS_OK) {
     return err;
   }
@@ -238,9 +245,8 @@ chess_error chess_save_store(chess_nvs_backend *be, const chess_save *save) {
     }
   }
   {
-    chess_save verify;
-    if (chess_save_decode(check, check_len, &verify) != CHESS_OK ||
-        verify.seq != seq) {
+    if (chess_save_decode(check, check_len, &s_verify) != CHESS_OK ||
+        s_verify.seq != seq) {
       return CHESS_ERR_CORRUPT;
     }
   }
