@@ -208,16 +208,37 @@ static void cmd_moves(cli_state *st, const char *arg) {
 /* Engine move for the side to move, via the in-process adapter. Works
  * from any ongoing position (the engine takes FEN, so no session or
  * attach rules). The adapter core-validates; a second apply can only
- * fail if the game ended between the two calls. */
+ * fail if the game ended between the two calls. Optional budget:
+ * `ai [nodes [depth]]`, defaults match casual host play. */
 static void cmd_ai(cli_state *st, const char *arg) {
   chess_move reply;
   chess_error err;
   char uci[6];
+  uint32_t nodes = CLI_AI_NODES;
+  unsigned depth = CLI_AI_DEPTH;
   if (arg != NULL) {
-    printf("error bad-arg\n");
-    return;
+    char *end = NULL;
+    unsigned long n = strtoul(arg, &end, 10);
+    const char *rest;
+    if (end == arg || n == 0 || n > 100000000u) {
+      printf("error bad-arg\n");
+      return;
+    }
+    nodes = (uint32_t)n;
+    rest = end;
+    while (*rest == ' ' || *rest == '\t') {
+      rest++;
+    }
+    if (*rest != '\0') {
+      unsigned long d = strtoul(rest, &end, 10);
+      if (end == rest || d == 0 || d > 64) {
+        printf("error bad-arg\n");
+        return;
+      }
+      depth = (unsigned)d;
+    }
   }
-  if (chess_ai_suggest(&st->game.position, CLI_AI_NODES, CLI_AI_DEPTH,
+  if (chess_ai_suggest(&st->game.position, nodes, depth,
                        &reply) != 0) {
     printf("error engine-failed\n");
     return;
