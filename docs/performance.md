@@ -12,7 +12,7 @@
 | 合法着与生成 scratch | ≤4KiB | 固定容量，禁止递归每层256着数组 |
 | app task stack | 起点4KiB | ESP-IDF stack单位核对；测最低余量 |
 | storage stack+编码缓冲 | 起点3KiB + ≤6KiB | 只保留一个编码 buffer，不多复制大快照 |
-| AI task stack | 起点8KiB | 搜索递归必须测；不是安全保证 |
+| AI task stack | 起点16KiB | 设备实测8KiB在搜索后合法着校验时溢出；必须测各难度高水位 |
 | AI TT | 0（M2） | hashing disabled；MAP不得出现巨表 |
 | 棋子 | 5400B基础mask，Flash | 不复制全部像素到heap |
 | 全屏 RGB565 canvas | 0 | 240×320×2=153600B，禁止分配 |

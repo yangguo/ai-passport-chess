@@ -27,7 +27,7 @@ x=0                 240
 
 | 状态 | UP/DOWN | OK click | OK long |
 |---|---|---|---|
-| HOME | 循环继续/新局/设置 | 进入；新局覆盖前确认 | 留在 HOME |
+| HOME | 循环继续/新局/人机/语言 | 进入或即时切换语言 | 留在 HOME |
 | SELECT_PIECE | 按 square 升序循环有合法着的己方棋子 | 选中进入落点 | 暂停菜单 |
 | SELECT_TARGET | 按目标 square 升序循环去重合法落点 | 非升变直接提交；升变进入菜单 | 返回棋子选择 |
 | PROMOTION | 后→车→象→马循环 | 提交完整 promotion move | 返回落点，局面不变 |

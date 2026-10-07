@@ -1,0 +1,78 @@
+# Firmware build for ai-passport-chess (ESP32-C3, ESP-IDF 5.5.3).
+# Compiles on pull requests: push the branch, open the PR, collect the
+# merged 0x0 image + app/ELF/MAP artifacts here. No device is touched.
+name: Build firmware
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      display_diagnostic:
+        description: Build LCD/LVGL-only diagnostic firmware
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  host-gate:
+    name: Docs and host tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docs check
+        run: python3 tools/check_docs.py
+      - name: Chinese font coverage
+        run: python3 tools/check_chess_font_coverage.py
+      - name: Host tests with sanitizers
+        run: |
+          cmake -S tests/host -B build/host -DCHESS_SANITIZERS=ON
+          cmake --build build/host
+          ctest --test-dir build/host --output-on-failure
+      - name: CLI behavior tests
+        run: |
+          cmake -S apps/cli -B build/cli -DCHESS_SANITIZERS=ON
+          cmake --build build/cli
+          ctest --test-dir build/cli --output-on-failure
+
+  firmware:
+    name: ESP-IDF build and merge check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install ESP-IDF
+        uses: espressif/install-esp-idf-action@8fc05d1470d5591417e7a3707a1f2bec178db4ae
+        with:
+          version: v5.5.3
+      - name: Build firmware
+        shell: bash
+        run: |
+          if [[ "${{ inputs.display_diagnostic }}" == "true" ]]; then
+            echo 'CONFIG_CHESS_DIAGNOSTIC_DISPLAY=y' >> sdkconfig.defaults
+          fi
+          idf.py build
+      - name: Size report
+        shell: bash
+        run: |
+          idf.py size
+          idf.py size-components
+      - name: Merge 0x0 image and verify layout
+        shell: bash
+        run: |
+          sh tools/validate_firmware.sh
+      - name: Upload merged image and build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            build/merged.bin
+            build/ai-passport-chess.bin
+            build/ai-passport-chess.elf
+            build/ai-passport-chess.map
+            build/partitions.csv
+          if-no-files-found: error

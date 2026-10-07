@@ -7,5 +7,6 @@
 - Follow docs/sources.md for pinned upstream versions. Read imported BSP AGENTS.md/applicable development guidance when importing or editing upstream code. Keep third-party licenses.
 - Run python3 tools/check_docs.py for documentation changes. Once implemented, run relevant host/perft/sanitizer and clean firmware checks. Do not call docs CI a chess/perft/firmware pass.
 - Hardware flashing and community publishing require explicit task authorization. Document-only tasks do not authorize either. Do not wipe shared NVS to mask errors.
+- Before any app-only flash, read and decode the device's actual partition table and verify its selected boot slot. Never infer the write address from this checkout's partitions.csv: an existing OTA device may boot ota_0 at 0x20000 while this project's factory layout starts at 0x10000. Verify the written app at the actual target and compare NVS/OTA metadata before and after. Changing the bootloader or partition table requires separate authorization.
 - Report local/host, build, CI, device and publication evidence separately. Leave NOT RUN visible. Budget values are targets until measured.
 - Do not commit firmware readbacks, credentials, private device identity, build caches or managed_components. Future release binaries are packaged artifacts.

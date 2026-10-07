@@ -49,7 +49,7 @@ python3 tools/check_docs.py
 | M2 | 上述 + ai-adapter | deadline/cancel/mapping/regression |
 | v* release | 全部 gate + package | 产物对应tag且校验完整；设备验收另附 |
 
-firmware job 使用 `espressif/idf:v5.5.3` 并在 M0 锁定实际镜像 digest；Actions 固定 commit SHA（初始文档CI已固定）。host用Linux Clang+sanitizers，macOS定期核验。PR仅读权限，不在不可信PR下使用 secrets；cache key含IDF、manifest、lock、配置。对依赖锁漂移 fail。发布 `v*` 仅在正常分支/tag且 gate 成功后允许 contents:write；未做真机验收的产物标记 prerelease。
+firmware job 在 GitHub runner 上用固定 commit 的 `espressif/install-esp-idf-action` 安装 ESP-IDF v5.5.3，不使用容器。Actions 固定 commit SHA；host用Linux Clang+sanitizers，macOS定期核验。PR仅读权限，不在不可信PR下使用 secrets；cache key含IDF、manifest、lock、配置。对依赖锁漂移 fail。发布 `v*` 仅在正常分支/tag且 gate 成功后允许 contents:write；未做真机验收的产物标记 prerelease。
 
 ## 发布包内容
 
@@ -63,6 +63,10 @@ firmware job 使用 `espressif/idf:v5.5.3` 并在 M0 锁定实际镜像 digest�
 
 开发保留NVS优先分段烧录；完整合并镜像可能以padding覆盖NVS，需在发布说明告知会重置棋局。这次文档任务不连接或刷写设备。检查芯片与8MiB Flash，不使用 erase_flash 作为常规修复。
 
+**app-only 的目标由设备实际分区表决定。** 刷写前读取并解析设备 `0x8000` 的分区表，核实当前启动槽及其偏移、容量，并备份 NVS 和 OTA 元数据。工程 `partitions.csv` 与构建产物的 flash_args 只描述该构建对应的完整布局，不能证明设备已经使用此布局。禁止直接把 `idf.py flash` 当作保留旧配置的 app-only 更新，因为它还会写启动程序和分区表。
+
+2026-10-07 排障读取到的设备仍使用原 OTA 布局：NVS 为 `0x9000/0x4000`，OTA 元数据为 `0xd000/0x2000`，`ota_0` 为 `0x20000/0x2f0000`，`ota_1` 为 `0x310000/0x2f0000`；元数据选择 `ota_0`。本工程完整布局的 factory 地址 `0x10000` 不适用于该设备的 app-only 更新。只有在另行授权改写分区布局后，才能按新完整布局刷写。写入后核验实际应用分区，并比较 NVS/OTA 元数据；写入校验成功仍须观察应用启动与界面。
+
 ```sh
 # M1 后在已构建工程中；串口替换为实际端口
 idf.py -p /dev/cu.usbmodemXXXX flash monitor
@@ -75,3 +79,7 @@ python -m esptool --chip esp32c3 -p /dev/cu.usbmodemXXXX -b 460800 \
 esptool版本以v5.5.3环境安装的锁定版本为准，记录版本和实际支持的子命令。浏览器可用 [AI Passport Web Flasher](https://ai-passport.folotoy.cn/tools/web-flasher/) 选择full文件与0x0地址。刷完从串口确认commit、NVS恢复/新局、屏幕和三键；上传或push成功都不等于设备通过。
 
 本项目不自动读取旧设备Flash作备份。若用户另行授权备份，避免提交身份/密钥/原机镜像；按既有设备维护约定保存于 XiaoZhi checkout 的日期备份目录，并限制权限。
+
+## 显示诊断构建
+
+在 GitHub Actions 手动运行 `Build firmware` 时勾选 `display_diagnostic`，会生成只初始化 NVS、LCD 与 LVGL 的诊断固件；它跳过棋局、存档读取和自定义字体，显示内置英文字测试画面，并在 USB Serial/JTAG 输出启动阶段和复位原因。选项默认关闭。用于定位黑屏时只刷 app 分区并保留 NVS；诊断固件不用于日常游戏，完成检查后需刷回正常固件。
