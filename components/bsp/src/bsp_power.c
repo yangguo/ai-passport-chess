@@ -31,7 +31,23 @@ esp_err_t bsp_power_wait_for_wake_release(void) {
 }
 
 esp_err_t bsp_power_enter_deep_sleep(void) {
-    esp_err_t err = esp_deep_sleep_enable_gpio_wakeup(
+    /* ADC setup disables the pad's digital input. The C3 wakeup API only
+     * selects the trigger; restore input before the sleep code holds the pad.
+     * Keep the external ladder pull-up, without changing its thresholds. */
+    const gpio_config_t config = {
+        .pin_bit_mask = 1ULL << BSP_BTN_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&config);
+    if (err != ESP_OK) return err;
+    if (gpio_get_level(BSP_BTN_GPIO) == 0) return ESP_ERR_INVALID_STATE;
+    vTaskDelay(pdMS_TO_TICKS(20));
+    if (gpio_get_level(BSP_BTN_GPIO) == 0) return ESP_ERR_INVALID_STATE;
+
+    err = esp_deep_sleep_enable_gpio_wakeup(
         1ULL << BSP_BTN_GPIO, ESP_GPIO_WAKEUP_GPIO_LOW);
     if (err != ESP_OK) return err;
 
