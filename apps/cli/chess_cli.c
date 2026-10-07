@@ -445,6 +445,9 @@ int main(void) {
   char line[1024];
   bool quit = false;
   memset(&st, 0, sizeof(st));
+  /* Unbuffered stdout: drivers read us through pipes, where libc
+   * would otherwise hold every reply until process exit. */
+  setvbuf(stdout, NULL, _IONBF, 0);
   chess_game_init_fen(&st.game, START_FEN);
   st.settings.difficulty = CHESS_DIFF_MEDIUM;
   st.settings.language = 0;
