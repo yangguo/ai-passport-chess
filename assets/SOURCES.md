@@ -15,7 +15,7 @@ punctuation; Latin text falls back to LVGL's Montserrat 14 font.
   font defaults to weight 100; using it directly produces faint Thin strokes.
 - Regenerate with `python3 tools/generate_chess_font.py` (uv and Node.js/npm required; no Docker).
 
-The subset contains 12,842 bytes of raw glyph bitmaps stored in Flash, plus
+The subset contains 13,157 bytes of raw glyph bitmaps stored in Flash, plus
 descriptors and maps. Its 21px line height fits the 30px header and menu rows;
 two footer lines fit the 50px footer. Source-file size is not the firmware RAM
 footprint. The full upstream font and static instance are temporary conversion

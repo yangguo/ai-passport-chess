@@ -99,8 +99,6 @@ static void draw_line(lv_layer_t *layer, int x1, int y1, int x2, int y2,
                       uint32_t color, int32_t width) {
     lv_draw_line_dsc_t dsc;
     lv_draw_line_dsc_init(&dsc);
-    dsc.color = lv_color_hex(color);
-    dsc.width = width;
     dsc.round_end = 1;
     dsc.round_start = 1;
     dsc.opa = LV_OPA_COVER;
@@ -108,44 +106,43 @@ static void draw_line(lv_layer_t *layer, int x1, int y1, int x2, int y2,
     dsc.p1.y = y1;
     dsc.p2.x = x2;
     dsc.p2.y = y2;
+    /* A thin contrasting edge keeps a body-colored stroke visible on
+     * both square colors without making Black's body look white. */
+    dsc.color = lv_color_hex(color == PIECE_W ? PIECE_W_LINE : PIECE_B_LINE);
+    dsc.width = width + 3;
+    lv_draw_line(layer, &dsc);
+    dsc.color = lv_color_hex(color);
+    dsc.width = width + 1;
     lv_draw_line(layer, &dsc);
 }
 
 static void draw_disc(lv_layer_t *layer, int cx, int cy, int r,
                        uint32_t color) {
     lv_draw_arc_dsc_t dsc;
-    int32_t width;
     if (r < 2) {
         r = 2;
     }
-    width = (int32_t)(r * 2 - 1);
     lv_draw_arc_dsc_init(&dsc);
-    dsc.color = lv_color_hex(color);
-    dsc.width = width;
     dsc.opa = LV_OPA_COVER;
     dsc.center.x = cx;
     dsc.center.y = cy;
-    dsc.radius = (uint16_t)(r - 1);
     dsc.start_angle = 0;
     dsc.end_angle = 360;
+    dsc.color = lv_color_hex(color == PIECE_W ? PIECE_W_LINE : PIECE_B_LINE);
+    dsc.radius = (uint16_t)(r + 1);
+    dsc.width = (int32_t)(r * 2 + 3);
     lv_draw_arc(layer, &dsc);
-}
-
-static void draw_ball(lv_layer_t *layer, int cx, int cy, int r, uint32_t fill,
-                      uint32_t line) {
-    if (r < 3) {
-        draw_disc(layer, cx, cy, r, fill);
-        return;
-    }
-    draw_disc(layer, cx, cy, r, line);
-    draw_disc(layer, cx, cy, r - 1, fill);
+    dsc.color = lv_color_hex(color);
+    dsc.radius = (uint16_t)r;
+    dsc.width = (int32_t)(r * 2 + 1);
+    lv_draw_arc(layer, &dsc);
 }
 
 /* Compact Staunton-inspired silhouettes sized for one 30px cell. */
 static void draw_piece(lv_layer_t *layer, unsigned sq) {
     chess_piece p = s_snap.cells[sq];
-    uint32_t fill;
-    uint32_t line;
+    uint32_t body;
+    uint32_t detail;
     int ox = cell_x(sq);
     int oy = cell_y(sq);
     int cx = ox + 15;
@@ -153,95 +150,95 @@ static void draw_piece(lv_layer_t *layer, unsigned sq) {
         return;
     }
     if (p.color == CHESS_WHITE) {
-        fill = PIECE_W;
-        line = PIECE_W_LINE;
+        body = PIECE_W;
+        detail = PIECE_W_LINE;
     } else {
-        fill = PIECE_B;
-        line = PIECE_B_LINE;
+        body = PIECE_B;
+        detail = PIECE_B_LINE;
     }
     switch (p.type) {
     case CHESS_PAWN: {
         /* Rounded head, collar, tapered stem and stepped pedestal. */
-        draw_ball(layer, cx, oy + 8, 4, fill, line);
-        draw_line(layer, cx - 3, oy + 13, cx + 3, oy + 13, line, 3);
-        draw_line(layer, cx - 2, oy + 15, cx + 2, oy + 15, line, 3);
-        draw_line(layer, cx - 2, oy + 15, cx - 4, oy + 21, line, 3);
-        draw_line(layer, cx + 2, oy + 15, cx + 4, oy + 21, line, 3);
-        draw_line(layer, cx - 6, oy + 21, cx + 6, oy + 21, line, 3);
-        draw_line(layer, cx - 7, oy + 24, cx + 7, oy + 24, line, 3);
+        draw_disc(layer, cx, oy + 8, 4, body);
+        draw_line(layer, cx - 3, oy + 13, cx + 3, oy + 13, body, 3);
+        draw_line(layer, cx - 2, oy + 15, cx + 2, oy + 15, body, 3);
+        draw_line(layer, cx - 2, oy + 15, cx - 4, oy + 21, body, 3);
+        draw_line(layer, cx + 2, oy + 15, cx + 4, oy + 21, body, 3);
+        draw_line(layer, cx - 6, oy + 21, cx + 6, oy + 21, body, 3);
+        draw_line(layer, cx - 7, oy + 24, cx + 7, oy + 24, body, 3);
         break;
     }
     case CHESS_KNIGHT: {
         /* Horse profile facing right: ears, brow, muzzle, jaw and neck. */
-        draw_line(layer, cx - 5, oy + 21, cx - 5, oy + 13, line, 4);
-        draw_line(layer, cx - 5, oy + 13, cx - 8, oy + 8, line, 4);
-        draw_line(layer, cx - 8, oy + 8, cx - 4, oy + 5, line, 4);
-        draw_line(layer, cx - 4, oy + 5, cx - 1, oy + 8, line, 4);
-        draw_line(layer, cx - 1, oy + 8, cx + 5, oy + 8, line, 4);
-        draw_line(layer, cx + 5, oy + 8, cx + 8, oy + 10, line, 4);
-        draw_line(layer, cx + 8, oy + 10, cx + 6, oy + 13, line, 4);
-        draw_line(layer, cx + 6, oy + 13, cx + 2, oy + 14, line, 4);
-        draw_line(layer, cx + 2, oy + 14, cx + 1, oy + 18, line, 4);
-        draw_line(layer, cx + 1, oy + 18, cx + 5, oy + 21, line, 4);
-        draw_line(layer, cx - 5, oy + 15, cx + 1, oy + 19, fill, 2);
-        draw_disc(layer, cx + 2, oy + 10, 1, line);
-        draw_line(layer, cx - 7, oy + 22, cx + 7, oy + 22, line, 3);
-        draw_line(layer, cx - 8, oy + 25, cx + 8, oy + 25, line, 3);
+        draw_line(layer, cx - 5, oy + 21, cx - 5, oy + 13, body, 4);
+        draw_line(layer, cx - 5, oy + 13, cx - 8, oy + 8, body, 4);
+        draw_line(layer, cx - 8, oy + 8, cx - 4, oy + 5, body, 4);
+        draw_line(layer, cx - 4, oy + 5, cx - 1, oy + 8, body, 4);
+        draw_line(layer, cx - 1, oy + 8, cx + 5, oy + 8, body, 4);
+        draw_line(layer, cx + 5, oy + 8, cx + 8, oy + 10, body, 4);
+        draw_line(layer, cx + 8, oy + 10, cx + 6, oy + 13, body, 4);
+        draw_line(layer, cx + 6, oy + 13, cx + 2, oy + 14, body, 4);
+        draw_line(layer, cx + 2, oy + 14, cx + 1, oy + 18, body, 4);
+        draw_line(layer, cx + 1, oy + 18, cx + 5, oy + 21, body, 4);
+        draw_line(layer, cx - 5, oy + 15, cx + 1, oy + 19, body, 2);
+        draw_disc(layer, cx + 2, oy + 10, 1, detail);
+        draw_line(layer, cx - 7, oy + 22, cx + 7, oy + 22, body, 3);
+        draw_line(layer, cx - 8, oy + 25, cx + 8, oy + 25, body, 3);
         break;
     }
     case CHESS_BISHOP: {
         /* Mitre point, rounded shoulders and the traditional diagonal slit. */
-        draw_ball(layer, cx, oy + 5, 2, fill, line);
-        draw_line(layer, cx, oy + 7, cx - 6, oy + 14, line, 4);
-        draw_line(layer, cx, oy + 7, cx + 6, oy + 14, line, 4);
-        draw_line(layer, cx - 6, oy + 14, cx - 3, oy + 19, line, 4);
-        draw_line(layer, cx + 6, oy + 14, cx + 3, oy + 19, line, 4);
-        draw_line(layer, cx - 3, oy + 19, cx + 3, oy + 19, line, 4);
-        draw_line(layer, cx - 2, oy + 11, cx + 2, oy + 15, fill, 2);
-        draw_line(layer, cx - 6, oy + 21, cx + 6, oy + 21, line, 3);
-        draw_line(layer, cx - 7, oy + 24, cx + 7, oy + 24, line, 3);
+        draw_disc(layer, cx, oy + 5, 2, body);
+        draw_line(layer, cx, oy + 7, cx - 6, oy + 14, body, 4);
+        draw_line(layer, cx, oy + 7, cx + 6, oy + 14, body, 4);
+        draw_line(layer, cx - 6, oy + 14, cx - 3, oy + 19, body, 4);
+        draw_line(layer, cx + 6, oy + 14, cx + 3, oy + 19, body, 4);
+        draw_line(layer, cx - 3, oy + 19, cx + 3, oy + 19, body, 4);
+        draw_line(layer, cx - 2, oy + 11, cx + 2, oy + 15, detail, 2);
+        draw_line(layer, cx - 6, oy + 21, cx + 6, oy + 21, body, 3);
+        draw_line(layer, cx - 7, oy + 24, cx + 7, oy + 24, body, 3);
         break;
     }
     case CHESS_ROOK: {
         /* Castle tower with three merlons, narrowing shaft and broad base. */
-        draw_line(layer, cx - 7, oy + 5, cx - 3, oy + 5, line, 4);
-        draw_line(layer, cx + 3, oy + 5, cx + 7, oy + 5, line, 4);
-        draw_line(layer, cx - 1, oy + 5, cx + 1, oy + 5, line, 4);
-        draw_line(layer, cx - 7, oy + 5, cx - 7, oy + 9, line, 3);
-        draw_line(layer, cx - 2, oy + 5, cx - 2, oy + 9, line, 3);
-        draw_line(layer, cx + 2, oy + 5, cx + 2, oy + 9, line, 3);
-        draw_line(layer, cx + 7, oy + 5, cx + 7, oy + 9, line, 3);
-        draw_line(layer, cx - 7, oy + 9, cx - 5, oy + 19, line, 3);
-        draw_line(layer, cx + 7, oy + 9, cx + 5, oy + 19, line, 3);
-        draw_line(layer, cx - 5, oy + 14, cx + 5, oy + 14, fill, 2);
-        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, line, 3);
-        draw_line(layer, cx - 8, oy + 24, cx + 8, oy + 24, line, 3);
+        draw_line(layer, cx - 7, oy + 5, cx - 3, oy + 5, body, 4);
+        draw_line(layer, cx + 3, oy + 5, cx + 7, oy + 5, body, 4);
+        draw_line(layer, cx - 1, oy + 5, cx + 1, oy + 5, body, 4);
+        draw_line(layer, cx - 7, oy + 5, cx - 7, oy + 9, body, 3);
+        draw_line(layer, cx - 2, oy + 5, cx - 2, oy + 9, body, 3);
+        draw_line(layer, cx + 2, oy + 5, cx + 2, oy + 9, body, 3);
+        draw_line(layer, cx + 7, oy + 5, cx + 7, oy + 9, body, 3);
+        draw_line(layer, cx - 7, oy + 9, cx - 5, oy + 19, body, 3);
+        draw_line(layer, cx + 7, oy + 9, cx + 5, oy + 19, body, 3);
+        draw_line(layer, cx - 5, oy + 14, cx + 5, oy + 14, body, 2);
+        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, body, 3);
+        draw_line(layer, cx - 8, oy + 24, cx + 8, oy + 24, body, 3);
         break;
     }
     case CHESS_QUEEN: {
         /* Crown with five points and a flared, ringed coronet. */
-        draw_ball(layer, cx - 7, oy + 6, 2, fill, line);
-        draw_ball(layer, cx, oy + 4, 2, fill, line);
-        draw_ball(layer, cx + 7, oy + 6, 2, fill, line);
-        draw_line(layer, cx - 7, oy + 8, cx - 5, oy + 17, line, 3);
-        draw_line(layer, cx, oy + 6, cx - 3, oy + 17, line, 3);
-        draw_line(layer, cx, oy + 6, cx + 3, oy + 17, line, 3);
-        draw_line(layer, cx + 7, oy + 8, cx + 5, oy + 17, line, 3);
-        draw_line(layer, cx - 5, oy + 17, cx + 5, oy + 17, line, 3);
-        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, line, 3);
-        draw_line(layer, cx - 8, oy + 24, cx + 8, oy + 24, line, 3);
+        draw_disc(layer, cx - 7, oy + 6, 2, body);
+        draw_disc(layer, cx, oy + 4, 2, body);
+        draw_disc(layer, cx + 7, oy + 6, 2, body);
+        draw_line(layer, cx - 7, oy + 8, cx - 5, oy + 17, body, 3);
+        draw_line(layer, cx, oy + 6, cx - 3, oy + 17, body, 3);
+        draw_line(layer, cx, oy + 6, cx + 3, oy + 17, body, 3);
+        draw_line(layer, cx + 7, oy + 8, cx + 5, oy + 17, body, 3);
+        draw_line(layer, cx - 5, oy + 17, cx + 5, oy + 17, body, 3);
+        draw_line(layer, cx - 6, oy + 20, cx + 6, oy + 20, body, 3);
+        draw_line(layer, cx - 8, oy + 24, cx + 8, oy + 24, body, 3);
         break;
     }
     case CHESS_KING: {
         /* Cross atop a taller, rounded crown and stepped royal base. */
-        draw_line(layer, cx, oy + 4, cx, oy + 11, line, 3);
-        draw_line(layer, cx - 3, oy + 7, cx + 3, oy + 7, line, 3);
-        draw_line(layer, cx - 4, oy + 13, cx - 6, oy + 19, line, 3);
-        draw_line(layer, cx + 4, oy + 13, cx + 6, oy + 19, line, 3);
-        draw_line(layer, cx - 4, oy + 13, cx + 4, oy + 13, line, 3);
-        draw_line(layer, cx - 6, oy + 19, cx + 6, oy + 19, line, 3);
-        draw_line(layer, cx - 7, oy + 22, cx + 7, oy + 22, line, 3);
-        draw_line(layer, cx - 8, oy + 25, cx + 8, oy + 25, line, 3);
+        draw_line(layer, cx, oy + 4, cx, oy + 11, body, 3);
+        draw_line(layer, cx - 3, oy + 7, cx + 3, oy + 7, body, 3);
+        draw_line(layer, cx - 4, oy + 13, cx - 6, oy + 19, body, 3);
+        draw_line(layer, cx + 4, oy + 13, cx + 6, oy + 19, body, 3);
+        draw_line(layer, cx - 4, oy + 13, cx + 4, oy + 13, body, 3);
+        draw_line(layer, cx - 6, oy + 19, cx + 6, oy + 19, body, 3);
+        draw_line(layer, cx - 7, oy + 22, cx + 7, oy + 22, body, 3);
+        draw_line(layer, cx - 8, oy + 25, cx + 8, oy + 25, body, 3);
         break;
     }
     default:

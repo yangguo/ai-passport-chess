@@ -116,3 +116,8 @@ add_test(NAME app COMMAND test_app)
 add_executable(test_board_layout test_board_layout.c)
 target_include_directories(test_board_layout PRIVATE ../../main ${CORE_DIR}/include)
 add_test(NAME board_layout COMMAND test_board_layout)
+
+add_executable(test_board_render test_board_render.c ${CORE_SOURCES})
+target_include_directories(test_board_render PRIVATE app_stubs ../../main
+  ${CORE_DIR}/include ${I18N_DIR}/include)
+add_test(NAME board_render COMMAND test_board_render)

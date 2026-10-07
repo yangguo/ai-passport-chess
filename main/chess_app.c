@@ -80,8 +80,9 @@ static bool s_thinking;
 static bool s_cancel_await;
 static uint64_t s_cancel_at_ms;
 static bool s_cancel_blocked;
-static unsigned s_home_mode; /* 0 main, 1 difficulty, 2 human color */
+static unsigned s_home_mode; /* 0 main, 1 difficulty, 2 human color, 3 new-game mode */
 static unsigned s_home_idx;
+static bool s_new_game_setup;
 
 static const char *cmd_label(chess_ui_cmd cmd) {
     switch (cmd) {
@@ -314,9 +315,13 @@ static void render_all(void) {
             s_view.menu[1] = app_text(CHESS_TEXT_NORMAL);
             s_view.menu[2] = app_text(CHESS_TEXT_HARD);
             s_view.nmenu = 3;
-        } else {
+        } else if (s_home_mode == 2) {
             s_view.menu[0] = app_text(CHESS_TEXT_PLAY_WHITE);
             s_view.menu[1] = app_text(CHESS_TEXT_PLAY_BLACK);
+            s_view.nmenu = 2;
+        } else {
+            s_view.menu[0] = app_text(CHESS_TEXT_NEW_LOCAL);
+            s_view.menu[1] = app_text(CHESS_TEXT_NEW_AI);
             s_view.nmenu = 2;
         }
         s_view.menu_idx = s_home_idx;
@@ -555,8 +560,10 @@ static void handle_command(chess_ui_command cmd) {
         }
         break;
     case CHESS_CMD_NEW_GAME:
-        start_fresh_game();
-        s_screen = APP_BOARD;
+        s_screen = APP_HOME;
+        s_home_mode = 3;
+        s_home_idx = 0;
+        s_new_game_setup = true;
         break;
     case CHESS_CMD_GO_HOME:
         s_screen = APP_HOME;
@@ -657,6 +664,7 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
                 if (s_home_idx == 1) {
                     start_fresh_game();
                 } else if (s_home_idx == 2) {
+                    s_new_game_setup = false;
                     s_home_mode = 1;
                     s_home_idx = 0;
                     render_all();
@@ -687,23 +695,47 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
             } else if (ev == BSP_BTN_CLICK) {
                 s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 2u)) % 3u;
             } else if (ev == BSP_BTN_LONG) {
-                s_home_mode = 0;
-                s_home_idx = 0;
+                s_home_mode = s_new_game_setup ? 3u : 0u;
+                s_home_idx = s_new_game_setup ? 1u : 0u;
             } else {
                 return;
             }
-        } else {
+        } else if (s_home_mode == 2) {
             if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
                 start_ai_game(s_new_difficulty,
                               s_home_idx == 0 ? CHESS_WHITE : CHESS_BLACK);
                 s_screen = APP_BOARD;
                 s_home_mode = 0;
                 s_home_idx = 0;
+                s_new_game_setup = false;
             } else if (ev == BSP_BTN_CLICK) {
                 s_home_idx ^= 1u;
             } else if (ev == BSP_BTN_LONG) {
                 s_home_mode = 1;
                 s_home_idx = (unsigned)s_new_difficulty;
+            } else {
+                return;
+            }
+        } else {
+            if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
+                if (s_home_idx == 0) {
+                    start_fresh_game();
+                    s_screen = APP_BOARD;
+                    s_home_mode = 0;
+                    s_home_idx = 0;
+                    s_new_game_setup = false;
+                } else {
+                    s_home_mode = 1;
+                    s_home_idx = 0;
+                }
+            } else if (ev == BSP_BTN_CLICK) {
+                s_home_idx ^= 1u;
+            } else if (ev == BSP_BTN_LONG) {
+                s_screen = APP_BOARD;
+                s_home_mode = 0;
+                s_home_idx = 0;
+                s_new_game_setup = false;
+                maybe_request_ai();
             } else {
                 return;
             }
@@ -722,8 +754,7 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     }
     if (s_screen == APP_OVER) {
         if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
-            start_fresh_game();
-            s_screen = APP_BOARD;
+            handle_command((chess_ui_command){.kind = CHESS_CMD_NEW_GAME});
         } else if (ev == BSP_BTN_LONG) {
             s_screen = APP_HOME;
         } else {

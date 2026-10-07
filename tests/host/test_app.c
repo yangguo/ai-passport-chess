@@ -157,6 +157,30 @@ int main(void) {
     assert(loaded.human_color == CHESS_WHITE);
     assert(loaded.settings.difficulty == CHESS_DIFF_HARD);
     assert(requests == 0);
+    /* New game starts with a mode chooser, not an immediate local reset.
+     * Cancelling setup must leave the current AI game intact. */
+    reset(); choose_color(true); deliver_move(12,28);
+    uint64_t generation = s_generation;
+    handle_command((chess_ui_command){.kind=CHESS_CMD_NEW_GAME}); render_all();
+    assert(rendered.screen == CHESS_VIEW_HOME && rendered.nmenu == 2);
+    assert(s_game.position.side_to_move == CHESS_BLACK);
+    assert(s_generation == generation);
+    on_input(BSP_BTN_OK,BSP_BTN_LONG);
+    on_input(BSP_BTN_OK,BSP_BTN_CLICK); /* suppressed long-release */
+    assert(s_screen == APP_BOARD && s_mode == CHESS_MODE_AI);
+    assert(s_human_color == CHESS_BLACK && s_generation == generation);
+    handle_command((chess_ui_command){.kind=CHESS_CMD_NEW_GAME}); render_all();
+    click(BSP_BTN_DOWN); click(BSP_BTN_OK); /* choose AI, difficulty */
+    assert(rendered.nmenu == 3);
+    click(BSP_BTN_DOWN); click(BSP_BTN_DOWN); click(BSP_BTN_OK); /* Hard */
+    assert(rendered.nmenu == 2);
+    click(BSP_BTN_OK); /* White */
+    assert(s_mode == CHESS_MODE_AI && s_difficulty == CHESS_AI_HARD);
+    assert(s_human_color == CHESS_WHITE && rendered.snapshot.bottom == CHESS_WHITE);
+    assert(!s_thinking && s_game.position.side_to_move == CHESS_WHITE);
+    handle_command((chess_ui_command){.kind=CHESS_CMD_NEW_GAME});render_all();
+    click(BSP_BTN_OK); /* local */
+    assert(s_mode == CHESS_MODE_LOCAL && s_game.position.side_to_move == CHESS_WHITE);
     puts("PASS: player color, AI opening, input ownership and save restore");
     return 0;
 }
