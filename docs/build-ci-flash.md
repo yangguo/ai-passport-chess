@@ -63,6 +63,10 @@ firmware job 在 GitHub runner 上用固定 commit 的 `espressif/install-esp-id
 
 开发保留NVS优先分段烧录；完整合并镜像可能以padding覆盖NVS，需在发布说明告知会重置棋局。这次文档任务不连接或刷写设备。检查芯片与8MiB Flash，不使用 erase_flash 作为常规修复。
 
+**app-only 的目标由设备实际分区表决定。** 刷写前读取并解析设备 `0x8000` 的分区表，核实当前启动槽及其偏移、容量，并备份 NVS 和 OTA 元数据。工程 `partitions.csv` 与构建产物的 flash_args 只描述该构建对应的完整布局，不能证明设备已经使用此布局。禁止直接把 `idf.py flash` 当作保留旧配置的 app-only 更新，因为它还会写启动程序和分区表。
+
+2026-10-07 排障读取到的设备仍使用原 OTA 布局：NVS 为 `0x9000/0x4000`，OTA 元数据为 `0xd000/0x2000`，`ota_0` 为 `0x20000/0x2f0000`，`ota_1` 为 `0x310000/0x2f0000`；元数据选择 `ota_0`。本工程完整布局的 factory 地址 `0x10000` 不适用于该设备的 app-only 更新。只有在另行授权改写分区布局后，才能按新完整布局刷写。写入后核验实际应用分区，并比较 NVS/OTA 元数据；写入校验成功仍须观察应用启动与界面。
+
 ```sh
 # M1 后在已构建工程中；串口替换为实际端口
 idf.py -p /dev/cu.usbmodemXXXX flash monitor
