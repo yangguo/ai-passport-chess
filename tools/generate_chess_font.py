@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FONT = ROOT / "assets/fonts/.NotoSansSC-VF.ttf"
+STATIC_FONT = ROOT / "assets/fonts/.NotoSansSC-w600.ttf"
 SOURCE = (
     "https://raw.githubusercontent.com/google/fonts/"
     "7085eb89a950e85db5b166b7a58d414544b4140c/"
@@ -30,19 +31,27 @@ def main() -> None:
         digest = hashlib.sha256(FONT.read_bytes()).hexdigest()
         if digest != EXPECTED_SHA256:
             raise SystemExit(f"unexpected Noto Sans SC SHA-256: {digest}")
+        # The upstream variable font defaults to wght=100 (Thin). Pin the
+        # outlines before rasterizing; increasing bpp cannot thicken strokes.
+        subprocess.run(
+            ["uvx", "--from", "fonttools==4.66.1", "fonttools",
+             "varLib.instancer", str(FONT), "wght=600",
+             "--output", str(STATIC_FONT)],
+            check=True,
+        )
         subprocess.run(
             [
                 "npx",
                 "--yes",
                 "lv_font_conv@1.5.3",
                 "--font",
-                str(FONT.relative_to(ROOT)),
+                str(STATIC_FONT.relative_to(ROOT)),
                 "--symbols",
                 "".join(symbols),
                 "--size",
                 "18",
                 "--bpp",
-                "2",
+                "4",
                 "--no-compress",
                 "--format",
                 "lvgl",
@@ -63,6 +72,7 @@ def main() -> None:
                           encoding="utf-8")
     finally:
         FONT.unlink(missing_ok=True)
+        STATIC_FONT.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 /* English UI uses the compact built-in font. Chinese uses a subset of
- * Noto Sans SC and falls back to Montserrat for Latin glyphs. */
+ * Noto Sans SC SemiBold (wght=600) and falls back to Montserrat for Latin glyphs. */
 #ifndef CHESS_FONT_H
 #define CHESS_FONT_H
 
