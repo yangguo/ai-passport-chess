@@ -7,11 +7,13 @@
 
 #include "bsp_battery.h"
 #include "bsp_display.h"
+#include "bsp_power.h"
 #include "chess_ai_task.h"
 #include "chess_board_draw.h"
 #include "chess_core.h"
 #include "chess_font.h"
 #include "chess_i18n.h"
+#include "chess_power.h"
 #include "chess_storage.h"
 #include "chess_ui.h"
 #include "chess_ui_model.h"
@@ -37,6 +39,7 @@ typedef enum app_screen {
     APP_BOARD = 0,
     APP_HOME,
     APP_OVER,
+    APP_BRIGHTNESS,
 } app_screen_t;
 
 /* Error codes shown on the model error page. */
@@ -61,6 +64,9 @@ static bool s_has_last_move;
 static chess_view s_view;
 static chess_save s_scratch;
 static chess_language s_language = CHESS_LANGUAGE_ENGLISH;
+static uint8_t s_brightness = 80;
+static uint8_t s_brightness_original = 80;
+static chess_power_state s_power;
 
 static const char *app_text(chess_text_id text) {
     return chess_i18n_get(s_language, text);
@@ -98,6 +104,8 @@ static const char *cmd_label(chess_ui_cmd cmd) {
         return app_text(CHESS_TEXT_NEW_GAME);
     case CHESS_CMD_GO_HOME:
         return app_text(CHESS_TEXT_GO_HOME);
+    case CHESS_CMD_BRIGHTNESS:
+        return app_text(CHESS_TEXT_BRIGHTNESS);
     default:
         return "?";
     }
@@ -281,7 +289,10 @@ static void render_all(void) {
         return;
     }
     s_view.language = s_language;
-    if (s_screen == APP_BOARD || s_model.screen == CHESS_SCREEN_PAUSE ||
+    if (s_screen == APP_BRIGHTNESS) {
+        s_view.screen = CHESS_VIEW_BRIGHTNESS;
+        s_view.brightness = s_brightness;
+    } else if (s_screen == APP_BOARD || s_model.screen == CHESS_SCREEN_PAUSE ||
         s_model.screen == CHESS_SCREEN_CONFIRM) {
         if (s_model.screen == CHESS_SCREEN_SELECT_PIECE ||
             s_model.screen == CHESS_SCREEN_SELECT_TARGET ||
@@ -357,7 +368,7 @@ static bool persist_game(void) {
     save->game = s_game;
     save->settings.difficulty = (uint8_t)s_difficulty;
     save->settings.language = (uint8_t)s_language;
-    save->settings.brightness = 80;
+    save->settings.brightness = s_brightness;
     save->mode = s_mode;
     save->human_color = (uint8_t)s_human_color;
     save->seq = s_seq;
@@ -502,6 +513,43 @@ static uint64_t now_ms(void) {
     return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
+static void set_brightness(uint8_t percent) {
+    if (percent > 100) percent = 100;
+    s_brightness = percent;
+    bsp_display_backlight(s_brightness);
+}
+
+static bool app_work_busy(void) {
+    return s_thinking || s_cancel_await || s_cancel_blocked ||
+           chess_ai_task_busy();
+}
+
+static void poll_power_policy(void) {
+    uint64_t now = now_ms();
+    chess_power_action action =
+        chess_power_poll(&s_power, now, app_work_busy());
+    if (action == CHESS_POWER_DIM) {
+        bsp_display_backlight(s_brightness < 20 ? s_brightness : 20);
+    } else if (action == CHESS_POWER_RESTORE) {
+        bsp_display_backlight(s_brightness);
+    } else if (action == CHESS_POWER_SLEEP) {
+        if (!persist_game()) {
+            chess_power_init(&s_power, now);
+            ESP_LOGE(TAG, "休眠取消：当前棋局未能保存");
+            render_all();
+            return;
+        }
+        if (bsp_power_enter_deep_sleep() != ESP_OK) {
+            chess_power_init(&s_power, now);
+            snprintf(s_note, sizeof(s_note), "%s",
+                     app_text(CHESS_TEXT_SLEEP_FAILED));
+            ESP_LOGE(TAG, "深度休眠准备失败，返回游戏界面");
+            bsp_display_backlight(s_brightness);
+            render_all();
+        }
+    }
+}
+
 static void after_move_applied(chess_move m) {
     s_last_move = m;
     s_has_last_move = true;
@@ -572,6 +620,10 @@ static void handle_command(chess_ui_command cmd) {
         s_screen = APP_BOARD;
         maybe_request_ai();
         break;
+    case CHESS_CMD_BRIGHTNESS:
+        s_brightness_original = s_brightness;
+        s_screen = APP_BRIGHTNESS;
+        break;
     case CHESS_CMD_ERROR_RETRY:
         /* Retry boot load (compat path); only reachable from boot. */
         s_note[0] = '\0';
@@ -596,6 +648,7 @@ static void boot_load(void) {
     if (err == CHESS_OK) {
         s_game = save->game;
         s_language = chess_i18n_normalize(save->settings.language);
+        s_brightness = save->settings.brightness;
         s_seq = save->seq + 1;
         s_saved = true;
         s_mode = (save->mode == CHESS_MODE_AI) ? CHESS_MODE_AI
@@ -653,9 +706,30 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
         ESP_LOGI(TAG, "in suppressed release-click");
         return;
     }
+    chess_power_activity(&s_power, now_ms());
+    if (chess_power_poll(&s_power, now_ms(), false) == CHESS_POWER_RESTORE) {
+        bsp_display_backlight(s_brightness);
+    }
     /* Serial evidence for the V0 input gate (one line per action). */
     ESP_LOGI(TAG, "in btn=%d ev=%d screen=%d gen=%llu", (int)btn, (int)ev,
              (int)s_screen, (unsigned long long)s_generation);
+    if (s_screen == APP_BRIGHTNESS) {
+        if (ev == BSP_BTN_CLICK && btn == BSP_BTN_UP) {
+            set_brightness(s_brightness >= 90 ? 100 : s_brightness + 10);
+        } else if (ev == BSP_BTN_CLICK && btn == BSP_BTN_DOWN) {
+            set_brightness(s_brightness <= 10 ? 10 : s_brightness - 10);
+        } else if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
+            (void)persist_game();
+            s_screen = APP_BOARD;
+        } else if (ev == BSP_BTN_LONG) {
+            set_brightness(s_brightness_original);
+            s_screen = APP_BOARD;
+        } else {
+            return;
+        }
+        render_all();
+        return;
+    }
     if (s_screen == APP_HOME) {
         /* New AI chooses difficulty, then human color. LONG backs out
          * without changing the saved game or its settings. */
@@ -775,6 +849,7 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
             chess_save_load_compat(&s_backend, save) == CHESS_OK) {
             s_game = save->game;
             s_language = chess_i18n_normalize(save->settings.language);
+            s_brightness = save->settings.brightness;
             s_seq = save->seq + 1;
             s_saved = true;
             s_mode = save->mode;
@@ -823,16 +898,19 @@ void chess_app_start(void) {
     s_has_last_move = false;
     s_mode = CHESS_MODE_LOCAL;
     s_difficulty = CHESS_AI_NORMAL;
+    s_brightness = 80;
     s_thinking = false;
     s_cancel_await = false;
     s_cancel_blocked = false;
     s_home_mode = 0;
     s_home_idx = 0;
+    chess_power_init(&s_power, now_ms());
     chess_ui_model_init(&s_model);
     if (!chess_ai_task_start()) {
         ESP_LOGW(TAG, "AI worker failed to start; AI games unavailable");
     }
     boot_load();
+    bsp_display_backlight(s_brightness);
     render_all();
     ESP_LOGI(TAG, "象棋应用就绪 gen=%llu", (unsigned long long)s_generation);
     for (;;) {
@@ -852,8 +930,9 @@ void chess_app_start(void) {
                          app_text(CHESS_TEXT_CANCEL_SLOW));
                 render_all();
             }
-            continue;
+        } else {
+            render_all();
         }
-        render_all();
+        poll_power_policy();
     }
 }

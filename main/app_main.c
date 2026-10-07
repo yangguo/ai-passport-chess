@@ -5,6 +5,7 @@
 #include "bsp_battery.h"
 #include "bsp_button.h"
 #include "bsp_display.h"
+#include "bsp_power.h"
 #include "chess_app.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -84,6 +85,10 @@ void app_main(void) {
 
     ESP_EARLY_LOGI(TAG, "ai-passport-chess 启动 reset_reason=%d",
                    (int)esp_reset_reason());
+    err = bsp_power_wait_for_wake_release();
+    if (err != ESP_OK) {
+        ESP_EARLY_LOGW(TAG, "休眠唤醒按键释放检测失败: %s", esp_err_to_name(err));
+    }
 
     err = nvs_flash_init();
     if (err != ESP_OK) {
@@ -101,9 +106,6 @@ void app_main(void) {
         return;
     }
     ESP_EARLY_LOGI(TAG, "display and LVGL ready");
-    bsp_display_backlight(80);
-    ESP_EARLY_LOGI(TAG, "backlight enabled");
-
     if (bsp_battery_init() != ESP_OK) {
         ESP_LOGW(TAG, "电量计初始化失败,显示 --");
     }

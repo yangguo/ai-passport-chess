@@ -103,6 +103,19 @@ static void render_home(const chess_view *view) {
     render_menu(view, tr(view, CHESS_TEXT_HOME));
 }
 
+static void render_brightness(const chess_view *view) {
+    char value[24];
+    clear_screen();
+    add_label(s_screen, tr(view, CHESS_TEXT_BRIGHTNESS), 70,
+              chess_font_title_for(view->language), 0xFAFAFA);
+    snprintf(value, sizeof(value), "%u%%", (unsigned)view->brightness);
+    add_label(s_screen, value, 125, chess_font_title_for(view->language),
+              0xFFB300);
+    add_label(s_screen, tr(view, CHESS_TEXT_BRIGHTNESS_HINT), 190,
+              ui_font(view), 0xFAFAFA);
+    lv_screen_load(s_screen);
+}
+
 void chess_ui_render(const chess_view *view) {
     switch (view->screen) {
     case CHESS_VIEW_BOARD:
@@ -122,6 +135,9 @@ void chess_ui_render(const chess_view *view) {
         break;
     case CHESS_VIEW_HOME:
         render_home(view);
+        break;
+    case CHESS_VIEW_BRIGHTNESS:
+        render_brightness(view);
         break;
     }
 }

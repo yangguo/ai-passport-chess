@@ -190,6 +190,21 @@ static void test_preselect_claim_never_submits(void) {
   CHECK(!m.has_preselect);
 }
 
+static void test_pause_menu_exposes_brightness_settings(void) {
+  chess_ui_model m;
+  chess_move moves[CHESS_MAX_MOVES];
+  size_t n = load_moves(START_FEN, moves);
+  chess_ui_command cmd;
+  CHECK(chess_ui_model_init(&m) == CHESS_OK);
+  CHECK(chess_ui_model_set_moves(&m, moves, n) == CHESS_OK);
+  send(&m, CHESS_EVT_LONG);
+  for (unsigned i = 0; i < 5; i++) send(&m, CHESS_EVT_DOWN);
+  CHECK(m.npause == 6);
+  cmd = send(&m, CHESS_EVT_OK);
+  CHECK(cmd.kind == CHESS_CMD_BRIGHTNESS);
+  CHECK(m.screen == CHESS_SCREEN_PAUSE);
+}
+
 static void test_confirm_defaults_cancel(void) {
   chess_ui_model m;
   chess_move moves[CHESS_MAX_MOVES];
@@ -259,6 +274,7 @@ int main(void) {
   test_submit_normal_move();
   test_promotion_flow_and_cancel();
   test_long_then_release_single_action();
+  test_pause_menu_exposes_brightness_settings();
   test_preselect_claim_never_submits();
   test_confirm_defaults_cancel();
   test_error_page_and_return();

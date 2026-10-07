@@ -11,6 +11,8 @@ static const char *const s_text[2][CHESS_TEXT_COUNT] = {
         "White wins", "Black wins", "Stalemate", "Dead position", "Fivefold draw",
         "75-move draw", "Draw claimed", "Draw agreed", "Game over", "Error",
         "OK: retry   LONG: home", "Cancel is taking longer", "Play White", "Play Black",
+        "Brightness", "UP/DOWN adjust  OK save  LONG cancel",
+        "Sleep failed",
     },
     {
         "象棋", "继续对局", "双人对弈", "人机对弈", "语言：中文", "简单", "普通",
@@ -21,6 +23,7 @@ static const char *const s_text[2][CHESS_TEXT_COUNT] = {
         "白方胜", "黑方胜", "逼和", "和棋局面", "五次重复和棋", "75回合和棋",
         "已申报和棋", "双方同意和棋", "对局结束", "错误", "确认：重试  长按：返回",
         "取消仍在处理", "执白", "执黑",
+        "亮度", "上下调节  确认保存  长按取消", "休眠失败",
     },
 };
 

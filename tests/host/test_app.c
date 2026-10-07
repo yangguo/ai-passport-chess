@@ -14,6 +14,9 @@ static chess_ai_result_event result;
 static bool result_ready;
 static chess_view rendered;
 static chess_save loaded;
+static int64_t fake_time_us = 1000000;
+static uint8_t backlight_percent;
+static unsigned sleep_attempts;
 
 static chess_error read_slot(void *ctx, int slot, uint8_t *out, size_t cap, size_t *len) {
     (void)ctx;
@@ -30,10 +33,13 @@ chess_nvs_backend chess_nvs_esp_backend(void) {
     return (chess_nvs_backend){read_slot, write_slot, commit_slot, NULL};
 }
 int bsp_battery_soc(void) { return 80; }
+void bsp_display_backlight(uint8_t percent) { backlight_percent = percent; }
+esp_err_t bsp_power_wait_for_wake_release(void) { return ESP_OK; }
+esp_err_t bsp_power_enter_deep_sleep(void) { sleep_attempts++; return ESP_FAIL; }
 bool bsp_lvgl_lock(int timeout) { (void)timeout; return true; }
 void bsp_lvgl_unlock(void) {}
 void chess_ui_render(const chess_view *view) { rendered = *view; }
-int64_t esp_timer_get_time(void) { return 1000000; }
+int64_t esp_timer_get_time(void) { return fake_time_us; }
 QueueHandle_t xQueueCreate(unsigned n, size_t size) { (void)n; (void)size; return NULL; }
 int xQueueSend(QueueHandle_t q, const void *item, unsigned ticks) {
     (void)q; (void)item; (void)ticks; return 0;
@@ -61,6 +67,9 @@ static void reset(void) {
     s_generation = 1; s_seq = 1; s_screen = APP_HOME;
     s_home_mode = 0; s_home_idx = 2; s_language = CHESS_LANGUAGE_ENGLISH;
     s_difficulty = CHESS_AI_NORMAL; s_suppress_click = false;
+    s_brightness = 80; s_brightness_original = 80;
+    chess_power_init(&s_power, (uint64_t)(fake_time_us / 1000));
+    backlight_percent = 80; sleep_attempts = 0;
     chess_ui_model_init(&s_model); start_fresh_game();
     s_screen = APP_HOME;
 }
@@ -119,7 +128,57 @@ static void test_white_human_opens(void) {
     assert(s_game.position.side_to_move == CHESS_BLACK);
     assert(requests == 1 && request.position.side_to_move == CHESS_BLACK);
 }
+
+static void test_brightness_settings_save_and_restore(void) {
+    reset();
+    s_screen = APP_BOARD;
+    feed_model_moves();
+    on_input(BSP_BTN_OK, BSP_BTN_LONG); /* pause */
+    on_input(BSP_BTN_OK, BSP_BTN_CLICK); /* consumed release click */
+    for (unsigned i = 0; i < 5; i++) click(BSP_BTN_DOWN);
+    click(BSP_BTN_OK); /* brightness page */
+    assert(rendered.screen == CHESS_VIEW_BRIGHTNESS);
+    assert(rendered.brightness == 80);
+    click(BSP_BTN_DOWN);
+    on_input(BSP_BTN_OK, BSP_BTN_LONG); /* cancel the edit */
+    assert(s_brightness == 80 && backlight_percent == 80);
+    on_input(BSP_BTN_OK, BSP_BTN_CLICK); /* consumed release click */
+    click(BSP_BTN_OK); /* reopen the still-selected brightness entry */
+    click(BSP_BTN_UP);
+    assert(rendered.brightness == 90);
+    click(BSP_BTN_OK); /* save and return to pause */
+    assert(rendered.screen == CHESS_VIEW_PAUSE);
+    assert(s_brightness == 90);
+    assert(chess_save_load(&s_backend, &loaded) == CHESS_OK);
+    assert(loaded.settings.brightness == 90);
+    s_brightness = 80;
+    boot_load();
+    assert(s_brightness == 90);
+}
+
+static void test_idle_dim_restore_and_defer_sleep_while_ai_busy(void) {
+    reset();
+    s_screen = APP_BOARD;
+    feed_model_moves();
+    chess_power_init(&s_power, 1000);
+    fake_time_us = 31000000;
+    poll_power_policy();
+    assert(backlight_percent == 20);
+    click(BSP_BTN_UP);
+    assert(backlight_percent == 80);
+
+    fake_time_us = 331000000;
+    busy = true;
+    poll_power_policy();
+    assert(sleep_attempts == 0);
+    busy = false;
+    poll_power_policy();
+    assert(sleep_attempts == 1);
+    assert(s_saved);
+}
 int main(void) {
+    test_brightness_settings_save_and_restore();
+    test_idle_dim_restore_and_defer_sleep_while_ai_busy();
     test_black_ai_opens_and_save_restores(); test_white_human_opens();
     reset(); choose_color(true);
     result = (chess_ai_result_event){.outcome=CHESS_AI_CANCELLED,
