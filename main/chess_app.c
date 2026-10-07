@@ -615,8 +615,12 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
         s_suppress_click = true;
     } else if (ev == BSP_BTN_CLICK && s_suppress_click) {
         s_suppress_click = false;
+        ESP_LOGI(TAG, "in suppressed release-click");
         return;
     }
+    /* Serial evidence for the V0 input gate (one line per action). */
+    ESP_LOGI(TAG, "in btn=%d ev=%d screen=%d gen=%llu", (int)btn, (int)ev,
+             (int)s_screen, (unsigned long long)s_generation);
     if (s_screen == APP_HOME) {
         /* Main list: Continue / New 2P / New AI / Language. Difficulty list
          * after New AI. LONG always lands safely on continue. */
