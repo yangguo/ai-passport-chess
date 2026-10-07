@@ -42,7 +42,7 @@ def main() -> None:
                 "--size",
                 "18",
                 "--bpp",
-                "4",
+                "2",
                 "--no-compress",
                 "--format",
                 "lvgl",

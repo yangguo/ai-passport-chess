@@ -13,8 +13,8 @@ if not re.search(r"\.bitmap_format\s*=\s*0\b", font_source):
     raise SystemExit(
         "Chinese font must use raw bitmaps; LVGL compressed-font support is disabled"
     )
-if not re.search(r"\.bpp\s*=\s*4\b", font_source):
-    raise SystemExit("Chinese font must use 4bpp grayscale for smoother strokes")
+if not re.search(r"\.bpp\s*=\s*2\b", font_source):
+    raise SystemExit("Chinese font must use the device-verified 2bpp format")
 if not re.search(r"\.line_height\s*=\s*19\b", font_source):
     raise SystemExit("Chinese font must use 18px glyphs (19px line height)")
 required = {
