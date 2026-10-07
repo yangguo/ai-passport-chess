@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      display_diagnostic:
+        description: Build LCD/LVGL-only diagnostic firmware
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -45,6 +51,9 @@ jobs:
         shell: bash
         run: |
           source "$IDF_PATH/export.sh"
+          if [[ "${{ inputs.display_diagnostic }}" == "true" ]]; then
+            echo 'CONFIG_CHESS_DIAGNOSTIC_DISPLAY=y' >> sdkconfig.defaults
+          fi
           idf.py build
       - name: Size report
         shell: bash

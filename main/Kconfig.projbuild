@@ -1,0 +1,10 @@
+menu "AI Passport Chess"
+
+config CHESS_DIAGNOSTIC_DISPLAY
+    bool "Build display-only diagnostic firmware"
+    default n
+    help
+        Skip chess, saved settings, and custom fonts. Initialize the LCD and
+        LVGL, show a built-in English test screen, and log boot checkpoints.
+
+endmenu

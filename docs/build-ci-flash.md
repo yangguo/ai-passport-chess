@@ -75,3 +75,7 @@ python -m esptool --chip esp32c3 -p /dev/cu.usbmodemXXXX -b 460800 \
 esptool版本以v5.5.3环境安装的锁定版本为准，记录版本和实际支持的子命令。浏览器可用 [AI Passport Web Flasher](https://ai-passport.folotoy.cn/tools/web-flasher/) 选择full文件与0x0地址。刷完从串口确认commit、NVS恢复/新局、屏幕和三键；上传或push成功都不等于设备通过。
 
 本项目不自动读取旧设备Flash作备份。若用户另行授权备份，避免提交身份/密钥/原机镜像；按既有设备维护约定保存于 XiaoZhi checkout 的日期备份目录，并限制权限。
+
+## 显示诊断构建
+
+在 GitHub Actions 手动运行 `Build firmware` 时勾选 `display_diagnostic`，会生成只初始化 NVS、LCD 与 LVGL 的诊断固件；它跳过棋局、存档读取和自定义字体，显示内置英文字测试画面，并在 USB Serial/JTAG 输出启动阶段和复位原因。选项默认关闭。用于定位黑屏时只刷 app 分区并保留 NVS；诊断固件不用于日常游戏，完成检查后需刷回正常固件。
