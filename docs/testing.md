@@ -2,7 +2,7 @@
 
 ## 当前与未来
 
-现在 `python3 tools/check_docs.py` 仅检查设计仓库。`tests/perft/cases.json` 是带来源的输入与期望，不是已测成绩。M1 提供 host CMake/CTest、perft CLI；不得把没有 core 的 CI 说成规则验收。
+当前已有文档检查、C11 host/CTest、perft CLI、字体覆盖检查和固件 CI。`tests/perft/cases.json` 是带来源的输入与期望；实际执行结果以 Actions/host 日志为准。PR #2 的 host/CLI 与固件检查通过，但不得把这些结果说成完整真机验收。当前边界见[开发状态](status.md)。
 
 ## perft 门槛
 

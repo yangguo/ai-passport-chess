@@ -1,13 +1,13 @@
 # chess_core：规则唯一真相源
 
-纯 C11、可重入、固定容量；相同逻辑用于 host 与 ESP32。所有下列 API 为待实现接口契约。
+纯 C11、可重入、固定容量；相同逻辑用于 host 与 ESP32。规则核心与下列主要接口已经实现；实现状态及验收边界见[开发状态](status.md)，详细测试证据见[验收记录](acceptance.md)。本文接口约定用于说明规则边界，源码是实际行为的最终依据。
 
 ## 数据与接口
 
 棋盘采用 64 格 mailbox，`a1=0`，空/颜色/类型用明确枚举；历史编码时使用 nibble，不直接依赖 enum ABI。`position` 含棋盘、side、4-bit castling、ep 或 NONE、halfmove、fullmove、王位置。`move` 含 from/to/promotion，flags 由 core 计算而非信任调用方。`undo` 保存所有被修改格、王位置及之前权利/计数，不保存指向临时内存的指针。
 
 ```c
-/* proposed public API; types supplied by chess_core.h in M1 */
+/* implemented public API; see chess_core.h */
 chess_error chess_position_from_fen(chess_position *out, const char *fen);
 chess_error chess_position_to_fen(const chess_position *pos, char *buf, size_t cap);
 chess_error chess_generate_legal(const chess_position *pos, chess_move *out,

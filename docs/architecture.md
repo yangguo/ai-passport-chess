@@ -25,7 +25,11 @@ flowchart TD
 | chess_storage | codec + NVS A/B 槽 | 保存裸 struct、擦除共享 NVS |
 | chess_puzzles（后续） | 带来源的局面、答案图、进度 | 把唯一答案等同唯一合法杀法 |
 
-## 计划目录（目前未实现）
+## 部署适配层
+
+棋局程序与安装模型分离。先保持完整固件可独立构建；启动器槽位兼容性验证通过后，才增加 `chess_launcher_adapter`，负责启动握手、返回请求与管理器要求的包格式，不拥有棋局或规则。需分别验证冷启动、启动器启动、游戏内返回与重启返回。多玩法管理器每次启动一个玩法；棋局续玩由本应用 NVS 存档保证。具体安装边界见[部署模型](deployment-model.md)。
+
+## 原始计划目录（当前实现已落地，结构有所演进）
 
 ```text
 components/chess_core/{include/chess_core.h,chess_position.c,chess_moves.c,chess_game.c,chess_fen.c,CMakeLists.txt}
@@ -40,6 +44,8 @@ tests/perft/cases.json                  # 已有基准数据，不是测试结�
 tools/{test_host.sh,validate_firmware.sh,package_firmware.py}
 third_party/mcu-max/                    # M2 导入，锁 SHA + LICENSE + patch 记录
 ```
+
+原计划中的 core、model、storage、AI、BSP、app、assets 与 host tests 均已实现；当前主要模块目录为 `components/chess_core/`、`components/chess_ui_model/`、`components/chess_storage/`、`components/chess_ai/`、`components/chess_power/`、`main/`、`assets/`、`tests/host/`、`tools/` 和 `third_party/mcu-max/`。上面的树仅用于保留初始设计记录。当前完成度见[开发状态](status.md)。
 
 ## 运行模型
 

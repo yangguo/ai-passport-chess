@@ -1,6 +1,6 @@
 # AI 与 mcu-max 集成
 
-M2 才接入。选择 [Gissio/mcu-max](https://github.com/Gissio/mcu-max)，MIT；核实 SHA 见 [来源](sources.md)。原引擎不是本项目规则权威，不直接复制 micro-Max 默认资源设置。
+已接入 [Gissio/mcu-max](https://github.com/Gissio/mcu-max)，MIT；锁定 SHA 见[来源](sources.md)。原引擎不是本项目规则权威，不直接复制 micro-Max 默认资源设置。AI 与主机集成测试、固件构建已通过；设备预算及用户指定棋力目标尚未完成验收，见[开发状态](status.md)。
 
 ## 已核实的接口与风险
 

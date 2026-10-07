@@ -6,7 +6,7 @@
 python3 tools/check_docs.py
 ```
 
-GitHub Actions `docs` job 执行相同检查。当前不含 ESP-IDF 工程/棋局代码，不能运行 idf.py build，也没有 firmware Release。以下流程是 M0/M1 实现任务，命令中的脚本会在该阶段加入，不能直接当作现成入口。
+GitHub Actions `docs` job 执行相同检查。仓库当前包含 ESP-IDF 工程、棋局代码及 host 测试。PR #2 的 CI 已通过 ESP-IDF v5.5.3 构建与镜像布局检查；本地入口和设备验收边界见[开发状态](status.md)。CI 通过不代表固件已公开发布或所有设备 gate 已通过。
 
 ## M0 引入构建基线
 
@@ -24,16 +24,16 @@ idf.py size
 idf.py size-components
 ```
 
-## 计划的 host/firmware 验证入口
+## host/firmware 验证入口
 
 ```sh
-# M1 新增后使用，无 IDF 环境也可运行
+# host 回归，无 IDF 环境也可运行
 cmake -S tests/host -B build/host -DCHESS_SANITIZERS=ON
 cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 python3 tools/check_docs.py
 
-# M0/M1 新增后：干净配置、构建、合并、布局检查与归档
+# 干净配置、构建、合并、布局检查
 ./tools/validate_firmware.sh
 ```
 
@@ -59,9 +59,16 @@ firmware job 在 GitHub runner 上用固定 commit 的 `espressif/install-esp-id
 - 重新组合分段镜像，与full相应偏移逐字节一致；padding/gap按合并规则验证；所有内容不超过8MiB。
 - full映像只因有效文件与分区覆盖而存在，不强制填充整8MiB。app-only不是可从0x0刷的交付物。
 
-## 刷机（未来有验证产物后，操作设备需要明确授权）
+## 两种安装方式
 
-开发保留NVS优先分段烧录；完整合并镜像可能以padding覆盖NVS，需在发布说明告知会重置棋局。这次文档任务不连接或刷写设备。检查芯片与8MiB Flash，不使用 erase_flash 作为常规修复。
+1. **独立完整固件**：`full.bin` 从 `0x0` 写入，会替换设备当前固件内容；合并镜像也可能覆盖 NVS 并清除棋局存档。
+2. **多玩法启动器槽位**：仅在确认槽位格式、分区、NVS 边界和返回方式后提供。槽位包按管理器契约安装；不能把完整 `0x0` 镜像当作槽位包。
+
+发布页面须标明产物类型及覆盖范围。当前槽位兼容性未验证，状态见[安装与运行](deployment-model.md)。
+
+## 安装与恢复（未来有验证产物后，操作设备需要明确授权）
+
+开发保留NVS优先分段烧录。完整合并镜像可能以 padding 覆盖 NVS 并替换当前玩法；槽位包则由启动器管理。两者不能混用。本次文档更新不连接或刷写设备。检查芯片与8MiB Flash，不使用 erase_flash 作为常规修复。
 
 **app-only 的目标由设备实际分区表决定。** 刷写前读取并解析设备 `0x8000` 的分区表，核实当前启动槽及其偏移、容量，并备份 NVS 和 OTA 元数据。工程 `partitions.csv` 与构建产物的 flash_args 只描述该构建对应的完整布局，不能证明设备已经使用此布局。禁止直接把 `idf.py flash` 当作保留旧配置的 app-only 更新，因为它还会写启动程序和分区表。
 

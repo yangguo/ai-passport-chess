@@ -1,12 +1,12 @@
 # NVS 存档与恢复
 
-M1 一局一档及少量设置；使用独立 namespace `chess_v1`，不碰无线/身份等命名空间。ESP-IDF NVS API 依据见 [来源](sources.md)。
+当前实现一局一档及少量设置；使用独立 namespace `chess_v1`，不碰无线/身份等命名空间。ESP-IDF NVS API 依据见[来源](sources.md)。代码与 host 测试位于 `components/chess_storage/`；设备掉电/最大容量压力仍未完成。
 
-## 编码契约（待实现）
+## 编码格式与实现边界
 
 不保存 C struct、不存指针/LVGL/引擎状态。codec host 可运行。显式 little-endian 字段、定长边界和 CRC32：
 
-| 字段 | 设计 |
+| 字段 | 格式/用途 |
 |---|---|
 | envelope | magic CHS1、schema u16、header_len u16、payload_len u32、seq u64、payload CRC32 |
 | position | 32 bytes nibble board、side、rights、raw ep、u16 halfmove、u32 fullmove |
