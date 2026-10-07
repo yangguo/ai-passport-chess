@@ -1,13 +1,13 @@
 /*******************************************************************************
  * Size: 16 px
  * Bpp: 2
- * Opts: --font assets/fonts/.NotoSansSC-VF.ttf --symbols 上下中五人仍保停单双取合同和回困在处备复失子存对局已弈思意报择按效文新方无普暂未机束棋次法消理用申白着确简结继续考胜菜言认试语误象败走输返选通逼重错键长难面黑，。：；！？… --size 16 --bpp 2 --format lvgl --lv-font-name chess_font_noto_sc_16 --lv-fallback lv_font_montserrat_14 -o assets/fonts/chess_zh_16.c
+ * Opts: --font assets/fonts/.NotoSansSC-VF.ttf --symbols 上下中五人仍保停单双取合同和回困在处备复失子存对局已弈思意报择按效文新方无普暂未机束棋次法消理用申白着确简结继续考胜菜言认试语误象败走输返选通逼重错键长难面黑，。：；！？… --size 16 --bpp 2 --format lvgl --lv-include lvgl.h --lv-font-name chess_font_noto_sc_16 --lv-fallback lv_font_montserrat_14 -o assets/fonts/chess_zh_16.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE
 #include "lvgl.h"
 #else
-#include "lvgl/lvgl.h"
+#include "lvgl.h"
 #endif
 
 #ifndef CHESS_FONT_NOTO_SC_16

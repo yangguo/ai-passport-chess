@@ -45,6 +45,8 @@ def main() -> None:
                 "2",
                 "--format",
                 "lvgl",
+                "--lv-include",
+                "lvgl.h",
                 "--lv-font-name",
                 "chess_font_noto_sc_16",
                 "--lv-fallback",
