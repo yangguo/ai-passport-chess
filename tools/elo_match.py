@@ -19,7 +19,7 @@ binary (user-provided --stockfish; NOT vendored, NOT firmware).
 Usage:
   python3 tools/elo_match.py --cli build/cli/chess-cli \
       --stockfish /opt/homebrew/bin/stockfish \
-      --games 10 --skill 5 --seed 7
+      --games 10 --skill 5
 """
 import argparse
 import math
@@ -112,7 +112,8 @@ def play_game(cli, engine, our_color, max_plies):
                 or board.is_insufficient_material()
                 or board.is_seventyfive_moves()
                 or board.is_fivefold_repetition()
-                or board.halfmove_clock >= 100
+                or board.can_claim_threefold_repetition()
+                or board.can_claim_fifty_moves()
             ):
                 game_node.headers["Result"] = "1/2-1/2"
                 return 0.5, str(game_node)
@@ -167,14 +168,20 @@ def main():
         engine.configure({"Skill Level": args.skill})
         score = 0.0
         played = 0
+        aborted = 0
         for game in range(args.games):
             our_color = chess.WHITE if game % 2 == 0 else chess.BLACK
             side = "white" if our_color == chess.WHITE else "black"
             cli = Cli(args.cli, budget)
             outcome = play_game(cli, engine, our_color, args.plies)
             result, pgn = outcome
+            if pgn_file is not None:
+                pgn_file.write(pgn)
+                pgn_file.write("\n\n")
+                pgn_file.flush()
             if result is None:
                 print("game %d (%s): ABORTED" % (game + 1, side))
+                aborted += 1
                 continue
             played += 1
             score += result
@@ -182,14 +189,15 @@ def main():
                 "1/2 " if result == 0.5 else "0-1 opp"
             )
             print("game %d (%s): %s" % (game + 1, side, tag))
-            if pgn_file is not None:
-                pgn_file.write(pgn)
-                pgn_file.write("\n\n")
-                pgn_file.flush()
     finally:
         if pgn_file is not None:
             pgn_file.close()
         engine.quit()
+
+    if aborted:
+        print("incomplete match: %d game(s) aborted; refusing to report rating"
+              % aborted)
+        return 1
 
     print("played %d, score %.1f/%.0f" % (played, score, played))
     if played == 0:
