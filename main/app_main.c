@@ -7,8 +7,13 @@
 #include "bsp_display.h"
 #include "chess_app.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 #include "nvs_flash.h"
+
+#define CHESS_APP_TASK_STACK 12288
+#define CHESS_APP_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 
 static const char *TAG = "chess-main";
 
@@ -23,6 +28,12 @@ static void show_error(const char *why) {
     lv_label_set_text_fmt(label, "Boot failed\n%s", why);
     lv_obj_center(label);
     bsp_lvgl_unlock();
+}
+
+static void chess_app_task(void *arg) {
+    (void)arg;
+    chess_app_start();
+    vTaskDelete(NULL);
 }
 
 void app_main(void) {
@@ -55,5 +66,9 @@ void app_main(void) {
         return;
     }
 
-    chess_app_start();
+    if (xTaskCreate(chess_app_task, "chess_app", CHESS_APP_TASK_STACK, NULL,
+                    CHESS_APP_TASK_PRIORITY, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "象棋应用任务创建失败");
+        show_error("Chess task failed");
+    }
 }
