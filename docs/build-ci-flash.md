@@ -49,7 +49,7 @@ python3 tools/check_docs.py
 | M2 | 上述 + ai-adapter | deadline/cancel/mapping/regression |
 | v* release | 全部 gate + package | 产物对应tag且校验完整；设备验收另附 |
 
-firmware job 使用 `espressif/idf:v5.5.3` 并在 M0 锁定实际镜像 digest；Actions 固定 commit SHA（初始文档CI已固定）。host用Linux Clang+sanitizers，macOS定期核验。PR仅读权限，不在不可信PR下使用 secrets；cache key含IDF、manifest、lock、配置。对依赖锁漂移 fail。发布 `v*` 仅在正常分支/tag且 gate 成功后允许 contents:write；未做真机验收的产物标记 prerelease。
+firmware job 在 GitHub runner 上用固定 commit 的 `espressif/install-esp-idf-action` 安装 ESP-IDF v5.5.3，不使用容器。Actions 固定 commit SHA；host用Linux Clang+sanitizers，macOS定期核验。PR仅读权限，不在不可信PR下使用 secrets；cache key含IDF、manifest、lock、配置。对依赖锁漂移 fail。发布 `v*` 仅在正常分支/tag且 gate 成功后允许 contents:write；未做真机验收的产物标记 prerelease。
 
 ## 发布包内容
 
