@@ -175,14 +175,14 @@ chess_error chess_save_decode(const uint8_t *buf, size_t len,
   const uint8_t *payload;
   uint32_t payload_len;
   uint16_t history_count;
-  chess_game game;
-  chess_save tmp;
+  static chess_save scratch;
+  chess_save *tmp = &scratch;
+  chess_game *game = &scratch.game;
   unsigned sq;
   unsigned i;
   uint8_t key[34];
 
-  memset(&game, 0, sizeof(game)); /* keep padding deterministic for memcmp */
-  memset(&tmp, 0, sizeof(tmp));
+  memset(tmp, 0, sizeof(*tmp)); /* keep padding deterministic for memcmp */
 
   if (buf == NULL || save == NULL) {
     return CHESS_ERR_NULL;
@@ -222,53 +222,53 @@ chess_error chess_save_decode(const uint8_t *buf, size_t len,
     uint8_t byte = payload[sq / 2u];
     uint8_t code = (sq % 2u == 0) ? (uint8_t)(byte & 0x0Fu)
                                   : (uint8_t)((byte >> 4) & 0x0Fu);
-    if (decode_piece(code, &game.position.board[sq]) != CHESS_OK) {
+    if (decode_piece(code, &game->position.board[sq]) != CHESS_OK) {
       return CHESS_ERR_CORRUPT;
     }
   }
   if (payload[32] > CHESS_BLACK || (payload[33] & (uint8_t)~0x0Fu) != 0u) {
     return CHESS_ERR_CORRUPT;
   }
-  game.position.side_to_move = (chess_color)payload[32];
-  game.position.castling = payload[33];
-  game.position.ep_square = payload[34];
-  game.position.halfmove_clock = get_u16(payload + 36);
+  game->position.side_to_move = (chess_color)payload[32];
+  game->position.castling = payload[33];
+  game->position.ep_square = payload[34];
+  game->position.halfmove_clock = get_u16(payload + 36);
   {
     uint32_t full = get_u32(payload + 38);
     if (full < 1u || full > 65535u) {
       return CHESS_ERR_CORRUPT;
     }
-    game.position.fullmove_number = (uint16_t)full;
+    game->position.fullmove_number = (uint16_t)full;
   }
   /* Recompute king squares; reject unreachable checks like FEN import. */
-  game.position.white_king = CHESS_NO_SQUARE;
-  game.position.black_king = CHESS_NO_SQUARE;
+  game->position.white_king = CHESS_NO_SQUARE;
+  game->position.black_king = CHESS_NO_SQUARE;
   for (sq = 0; sq < 64u; sq++) {
-    if (game.position.board[sq].type == CHESS_KING) {
-      if (game.position.board[sq].color == CHESS_WHITE) {
-        game.position.white_king = (uint8_t)sq;
+    if (game->position.board[sq].type == CHESS_KING) {
+      if (game->position.board[sq].color == CHESS_WHITE) {
+        game->position.white_king = (uint8_t)sq;
       } else {
-        game.position.black_king = (uint8_t)sq;
+        game->position.black_king = (uint8_t)sq;
       }
     }
   }
-  if (chess_position_validate(&game.position) != CHESS_OK) {
+  if (chess_position_validate(&game->position) != CHESS_OK) {
     return CHESS_ERR_CORRUPT;
   }
   {
-    bool white_checked = chess_is_attacked(&game.position,
-                                           game.position.white_king,
+    bool white_checked = chess_is_attacked(&game->position,
+                                           game->position.white_king,
                                            CHESS_BLACK);
-    bool black_checked = chess_is_attacked(&game.position,
-                                           game.position.black_king,
+    bool black_checked = chess_is_attacked(&game->position,
+                                           game->position.black_king,
                                            CHESS_WHITE);
     if (white_checked && black_checked) {
       return CHESS_ERR_CORRUPT;
     }
-    if (game.position.side_to_move == CHESS_WHITE && black_checked) {
+    if (game->position.side_to_move == CHESS_WHITE && black_checked) {
       return CHESS_ERR_CORRUPT;
     }
-    if (game.position.side_to_move == CHESS_BLACK && white_checked) {
+    if (game->position.side_to_move == CHESS_BLACK && white_checked) {
       return CHESS_ERR_CORRUPT;
     }
   }
@@ -280,44 +280,43 @@ chess_error chess_save_decode(const uint8_t *buf, size_t len,
       payload[44] == CHESS_STATUS_INVALID) {
     return CHESS_ERR_CORRUPT;
   }
-  game.initialized = true;
-  game.decided = (chess_status)payload[44];
-  game.history_len = history_count;
+  game->initialized = true;
+  game->decided = (chess_status)payload[44];
+  game->history_len = history_count;
   for (i = 0; i < history_count; i++) {
     unsigned k;
     for (k = 0; k < CHESS_KEY_LEN; k++) {
-      game.keys[i][k] = payload[48u + CHESS_KEY_LEN * i + k];
+      game->keys[i][k] = payload[48u + CHESS_KEY_LEN * i + k];
     }
   }
   /* The newest key must describe the current normalized position. */
-  chess_position_key(&game.position, key);
+  chess_position_key(&game->position, key);
   for (i = 0; i < CHESS_KEY_LEN; i++) {
-    if (game.keys[history_count - 1u][i] != key[i]) {
+    if (game->keys[history_count - 1u][i] != key[i]) {
       return CHESS_ERR_CORRUPT;
     }
   }
   /* Result byte must agree with the recomputed outcome. */
-  if (chess_game_status(&game) != game.decided) {
+  if (chess_game_status(game) != game->decided) {
     return CHESS_ERR_CORRUPT;
   }
 
-  tmp.game = game;
-  tmp.mode = payload[42];
-  tmp.human_color = payload[43];
-  tmp.seq = get_u64(buf + 12);
+  tmp->mode = payload[42];
+  tmp->human_color = payload[43];
+  tmp->seq = get_u64(buf + 12);
   if (payload[48u + CHESS_KEY_LEN * history_count] > CHESS_DIFF_HARD) {
-    tmp.settings.difficulty = CHESS_DIFF_MEDIUM;
+    tmp->settings.difficulty = CHESS_DIFF_MEDIUM;
   } else {
-    tmp.settings.difficulty = payload[48u + CHESS_KEY_LEN * history_count];
+    tmp->settings.difficulty = payload[48u + CHESS_KEY_LEN * history_count];
   }
-  tmp.settings.language = payload[48u + CHESS_KEY_LEN * history_count + 1u];
+  tmp->settings.language = payload[48u + CHESS_KEY_LEN * history_count + 1u];
   if (payload[48u + CHESS_KEY_LEN * history_count + 2u] > CHESS_BRIGHTNESS_MAX) {
-    tmp.settings.brightness = CHESS_BRIGHTNESS_MAX;
+    tmp->settings.brightness = CHESS_BRIGHTNESS_MAX;
   } else {
-    tmp.settings.brightness =
+    tmp->settings.brightness =
         payload[48u + CHESS_KEY_LEN * history_count + 2u];
   }
-  tmp.settings.reserved = 0;
-  *save = tmp;
+  tmp->settings.reserved = 0;
+  *save = *tmp;
   return CHESS_OK;
 }
