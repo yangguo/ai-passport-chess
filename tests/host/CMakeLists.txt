@@ -101,3 +101,18 @@ if(PYTHON3_BIN)
       --cases ${CMAKE_CURRENT_SOURCE_DIR}/../perft/cases.json
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif()
+
+# Real application state transitions; doubles only at ESP/LVGL/task boundaries.
+add_executable(test_app test_app.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c
+  ${MODEL_DIR}/chess_ui_model.c ${I18N_DIR}/chess_i18n.c
+  ${STORAGE_DIR}/chess_codec.c ${STORAGE_DIR}/chess_nvs.c
+  ${AI_DIR}/chess_ai.c ${ENGINE_DIR}/mcu-max.c)
+target_include_directories(test_app PRIVATE app_stubs
+  ../../main ../../components/bsp/include ${CORE_DIR}/include
+  ${MODEL_DIR}/include ${I18N_DIR}/include ${STORAGE_DIR}/include
+  ${AI_DIR}/include ${ENGINE_DIR})
+add_test(NAME app COMMAND test_app)
+
+add_executable(test_board_layout test_board_layout.c)
+target_include_directories(test_board_layout PRIVATE ../../main ${CORE_DIR}/include)
+add_test(NAME board_layout COMMAND test_board_layout)

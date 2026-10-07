@@ -4,6 +4,7 @@
  * captures = rings, checked king = warning frame (state is also in
  * the footer text, never color-only). */
 #include "chess_board_draw.h"
+#include "chess_board_layout.h"
 
 #include "chess_font.h"
 
@@ -22,11 +23,11 @@ static lv_obj_t *s_board;
 static chess_snapshot s_snap;
 
 static int cell_x(unsigned sq) {
-    return CHESS_BOARD_X + (int)(sq % 8u) * CHESS_BOARD_CELL;
+    return CHESS_BOARD_X + (int)chess_board_column(sq, s_snap.bottom) * CHESS_BOARD_CELL;
 }
 
 static int cell_y(unsigned sq) {
-    return CHESS_BOARD_Y + (int)(7u - sq / 8u) * CHESS_BOARD_CELL;
+    return CHESS_BOARD_Y + (int)chess_board_row(sq, s_snap.bottom) * CHESS_BOARD_CELL;
 }
 
 static void draw_square(lv_layer_t *layer, unsigned sq) {

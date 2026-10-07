@@ -70,14 +70,17 @@ static const char *app_text(chess_text_id text) {
 static const char *level_name(chess_ai_level level);
 static void after_move_applied(chess_move m);
 static void feed_model_moves(void);
-/* AI session (M2): human is always White in AI games for now. */
+static void maybe_request_ai(void);
+/* AI owns the side opposite the saved human color. */
 static uint8_t s_mode;
 static chess_ai_level s_difficulty;
+static chess_color s_human_color = CHESS_WHITE;
+static chess_ai_level s_new_difficulty;
 static bool s_thinking;
 static bool s_cancel_await;
 static uint64_t s_cancel_at_ms;
 static bool s_cancel_blocked;
-static unsigned s_home_mode; /* 0 main list, 1 difficulty list */
+static unsigned s_home_mode; /* 0 main, 1 difficulty, 2 human color */
 static unsigned s_home_idx;
 
 static const char *cmd_label(chess_ui_cmd cmd) {
@@ -230,6 +233,7 @@ static void build_snapshot(void) {
     snap->hover = CHESS_NO_SQUARE;
     snap->check = CHESS_NO_SQUARE;
     snap->side = mover;
+    snap->bottom = s_mode == CHESS_MODE_AI ? s_human_color : CHESS_WHITE;
     if (chess_is_attacked(&s_game.position, king,
                            (chess_color)(mover ^ 1u))) {
         snap->check = king;
@@ -240,6 +244,9 @@ static void build_snapshot(void) {
     } else {
         snap->last_from = CHESS_NO_SQUARE;
         snap->last_to = CHESS_NO_SQUARE;
+    }
+    if (s_mode == CHESS_MODE_AI && mover != s_human_color) {
+        return; /* No human focus/targets on the engine's turn. */
     }
     if (s_model.screen == CHESS_SCREEN_SELECT_PIECE && s_model.npieces > 0) {
         snap->hover = s_model.pieces[s_model.piece_idx];
@@ -302,11 +309,15 @@ static void render_all(void) {
             s_view.menu[2] = app_text(CHESS_TEXT_NEW_AI);
             s_view.menu[3] = app_text(CHESS_TEXT_LANGUAGE);
             s_view.nmenu = 4;
-        } else {
+        } else if (s_home_mode == 1) {
             s_view.menu[0] = app_text(CHESS_TEXT_EASY);
             s_view.menu[1] = app_text(CHESS_TEXT_NORMAL);
             s_view.menu[2] = app_text(CHESS_TEXT_HARD);
             s_view.nmenu = 3;
+        } else {
+            s_view.menu[0] = app_text(CHESS_TEXT_PLAY_WHITE);
+            s_view.menu[1] = app_text(CHESS_TEXT_PLAY_BLACK);
+            s_view.nmenu = 2;
         }
         s_view.menu_idx = s_home_idx;
         s_view.screen = CHESS_VIEW_HOME;
@@ -339,11 +350,11 @@ static bool persist_game(void) {
     chess_save *save = &s_scratch;
     memset(save, 0, sizeof(*save));
     save->game = s_game;
-    save->settings.difficulty = CHESS_DIFF_MEDIUM;
+    save->settings.difficulty = (uint8_t)s_difficulty;
     save->settings.language = (uint8_t)s_language;
     save->settings.brightness = 80;
     save->mode = s_mode;
-    save->human_color = CHESS_WHITE;
+    save->human_color = (uint8_t)s_human_color;
     save->seq = s_seq;
     if (!s_backend_ready ||
         chess_save_store(&s_backend, save) != CHESS_OK) {
@@ -363,6 +374,7 @@ static void start_fresh_game(void) {
     s_has_last_move = false;
     s_note[0] = '\0';
     s_mode = CHESS_MODE_LOCAL;
+    s_human_color = CHESS_WHITE;
     s_thinking = false;
     s_cancel_await = false;
     s_cancel_blocked = false;
@@ -371,11 +383,15 @@ static void start_fresh_game(void) {
     persist_game();
 }
 
-static void start_ai_game(chess_ai_level level) {
+static void start_ai_game(chess_ai_level level, chess_color human_color) {
     start_fresh_game();
     s_mode = CHESS_MODE_AI;
     s_difficulty = level;
+    s_human_color = human_color;
+    ESP_LOGI(TAG, "AI game human=%s level=%u",
+             human_color == CHESS_WHITE ? "white" : "black", (unsigned)level);
     persist_game();
+    maybe_request_ai();
 }
 
 static const char *level_name(chess_ai_level level) {
@@ -391,8 +407,8 @@ static const char *level_name(chess_ai_level level) {
     }
 }
 
-/* Ask the worker for the side-to-move reply (AI games, engine Black).
- * No-ops unless the game is ongoing, human just moved, and no search
+/* Ask the worker whenever the ongoing position belongs to the AI.
+ * Also handles White's opening and resumed searches; no search
  * is already running or blocked. */
 static void maybe_request_ai(void) {
     chess_ai_request req;
@@ -402,7 +418,7 @@ static void maybe_request_ai(void) {
     if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
         return;
     }
-    if (s_game.position.side_to_move != CHESS_BLACK) {
+    if (s_game.position.side_to_move == s_human_color) {
         return;
     }
     if (chess_ai_task_busy()) {
@@ -418,6 +434,9 @@ static void maybe_request_ai(void) {
     if (!chess_ai_task_request(&req)) {
         return;
     }
+    ESP_LOGI(TAG, "AI search side=%s gen=%llu",
+             req.position.side_to_move == CHESS_WHITE ? "white" : "black",
+             (unsigned long long)req.generation);
     s_thinking = true;
     s_note[0] = '\0';
 }
@@ -497,6 +516,10 @@ static void handle_command(chess_ui_command cmd) {
     case CHESS_CMD_NONE:
         break;
     case CHESS_CMD_SUBMIT_MOVE:
+        if (s_mode == CHESS_MODE_AI &&
+            s_game.position.side_to_move != s_human_color) {
+            return;
+        }
         err = chess_game_apply(&s_game, cmd.move);
         if (err == CHESS_OK) {
             after_move_applied(cmd.move);
@@ -523,7 +546,9 @@ static void handle_command(chess_ui_command cmd) {
         }
         break;
     case CHESS_CMD_RESIGN:
-        if (chess_game_resign(&s_game, s_game.position.side_to_move) ==
+        if (chess_game_resign(&s_game, s_mode == CHESS_MODE_AI
+                                      ? s_human_color
+                                      : s_game.position.side_to_move) ==
             CHESS_OK) {
             persist_game();
             s_screen = APP_OVER;
@@ -538,6 +563,7 @@ static void handle_command(chess_ui_command cmd) {
         break;
     case CHESS_CMD_RESUME:
         s_screen = APP_BOARD;
+        maybe_request_ai();
         break;
     case CHESS_CMD_ERROR_RETRY:
         /* Retry boot load (compat path); only reachable from boot. */
@@ -567,6 +593,8 @@ static void boot_load(void) {
         s_saved = true;
         s_mode = (save->mode == CHESS_MODE_AI) ? CHESS_MODE_AI
                                                 : CHESS_MODE_LOCAL;
+        s_human_color = (chess_color)save->human_color;
+        s_difficulty = (chess_ai_level)save->settings.difficulty;
         s_generation++;
         feed_model_moves();
         if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
@@ -622,8 +650,8 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     ESP_LOGI(TAG, "in btn=%d ev=%d screen=%d gen=%llu", (int)btn, (int)ev,
              (int)s_screen, (unsigned long long)s_generation);
     if (s_screen == APP_HOME) {
-        /* Main list: Continue / New 2P / New AI / Language. Difficulty list
-         * after New AI. LONG always lands safely on continue. */
+        /* New AI chooses difficulty, then human color. LONG backs out
+         * without changing the saved game or its settings. */
         if (s_home_mode == 0) {
             if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
                 if (s_home_idx == 1) {
@@ -640,24 +668,42 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
                     return;
                 }
                 s_screen = APP_BOARD;
+                maybe_request_ai();
             } else if (ev == BSP_BTN_CLICK) {
                 s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 3u)) % 4u;
             } else if (ev == BSP_BTN_LONG) {
                 s_screen = APP_BOARD;
+                maybe_request_ai();
             } else {
                 return;
             }
-        } else {
+        } else if (s_home_mode == 1) {
             if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
                 if (s_home_idx < 3) {
-                    start_ai_game((chess_ai_level)s_home_idx);
-                    s_screen = APP_BOARD;
+                    s_new_difficulty = (chess_ai_level)s_home_idx;
+                    s_home_mode = 2;
+                    s_home_idx = 0;
                 }
             } else if (ev == BSP_BTN_CLICK) {
                 s_home_idx = (s_home_idx + (btn == BSP_BTN_DOWN ? 1u : 2u)) % 3u;
             } else if (ev == BSP_BTN_LONG) {
                 s_home_mode = 0;
                 s_home_idx = 0;
+            } else {
+                return;
+            }
+        } else {
+            if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK) {
+                start_ai_game(s_new_difficulty,
+                              s_home_idx == 0 ? CHESS_WHITE : CHESS_BLACK);
+                s_screen = APP_BOARD;
+                s_home_mode = 0;
+                s_home_idx = 0;
+            } else if (ev == BSP_BTN_CLICK) {
+                s_home_idx ^= 1u;
+            } else if (ev == BSP_BTN_LONG) {
+                s_home_mode = 1;
+                s_home_idx = (unsigned)s_new_difficulty;
             } else {
                 return;
             }
@@ -700,9 +746,13 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
             s_language = chess_i18n_normalize(save->settings.language);
             s_seq = save->seq + 1;
             s_saved = true;
+            s_mode = save->mode;
+            s_human_color = (chess_color)save->human_color;
+            s_difficulty = (chess_ai_level)save->settings.difficulty;
             s_generation++;
             feed_model_moves();
             s_screen = APP_BOARD;
+            maybe_request_ai();
         } else {
             chess_ui_model_set_error(&s_model, ERR_LOAD_RETRY_FAILED);
         }

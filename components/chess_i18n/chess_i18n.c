@@ -10,7 +10,7 @@ static const char *const s_text[2][CHESS_TEXT_COUNT] = {
         "UP/DOWN OK LONG", "save failed", "AI fallback", "rejected", "no claim",
         "White wins", "Black wins", "Stalemate", "Dead position", "Fivefold draw",
         "75-move draw", "Draw claimed", "Draw agreed", "Game over", "Error",
-        "OK: retry   LONG: home", "Cancel is taking longer",
+        "OK: retry   LONG: home", "Cancel is taking longer", "Play White", "Play Black",
     },
     {
         "象棋", "继续对局", "双人对弈", "人机对弈", "语言：中文", "简单", "普通",
@@ -20,7 +20,7 @@ static const char *const s_text[2][CHESS_TEXT_COUNT] = {
         "上下键选择 长按菜单", "保存失败", "AI备用着", "着法无效", "无法申报和棋",
         "白方胜", "黑方胜", "逼和", "和棋局面", "五次重复和棋", "75回合和棋",
         "已申报和棋", "双方同意和棋", "对局结束", "错误", "确认：重试  长按：返回",
-        "取消仍在处理",
+        "取消仍在处理", "执白", "执黑",
     },
 };
 
