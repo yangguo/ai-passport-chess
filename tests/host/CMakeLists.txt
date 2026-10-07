@@ -128,3 +128,9 @@ add_executable(test_board_render test_board_render.c ${CORE_SOURCES})
 target_include_directories(test_board_render PRIVATE app_stubs ../../main
   ${CORE_DIR}/include ${I18N_DIR}/include)
 add_test(NAME board_render COMMAND test_board_render)
+
+# ADC wake-pad preparation before the hardware deep-sleep transition.
+add_executable(test_bsp_power test_bsp_power.c)
+target_include_directories(test_bsp_power PRIVATE power_stubs app_stubs
+  ../../components/bsp/include)
+add_test(NAME bsp_power COMMAND test_bsp_power)
