@@ -9,6 +9,10 @@ translations = (ROOT / "components/chess_i18n/chess_i18n.c").read_text(
     encoding="utf-8"
 )
 font_source = (ROOT / "assets/fonts/chess_zh_16.c").read_text(encoding="utf-8")
+if not re.search(r"\.bitmap_format\s*=\s*0\b", font_source):
+    raise SystemExit(
+        "Chinese font must use raw bitmaps; LVGL compressed-font support is disabled"
+    )
 required = {
     ord(char) for char in translations if "\u4e00" <= char <= "\u9fff"
 }

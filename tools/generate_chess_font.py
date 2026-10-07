@@ -43,6 +43,7 @@ def main() -> None:
                 "16",
                 "--bpp",
                 "2",
+                "--no-compress",
                 "--format",
                 "lvgl",
                 "--lv-include",
