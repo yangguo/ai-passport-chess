@@ -61,6 +61,9 @@ struct
 
     bool stop_search;
 
+    // Local patch: only a fully completed root iteration may survive stop.
+    mcumax_move completed_move;
+
     // Extra
     mcumax_callback user_callback;
     void *user_data;
@@ -500,6 +503,10 @@ static int32_t mcumax_search(int32_t alpha,
                             mcumax.board[square_from] = scan_piece;
                             mcumax.board[capture_square] = capture_piece;
 
+                            // Unwind only after board/side/material have been restored.
+                            if (mcumax.stop_search)
+                                goto cutoff;
+
                             if ((mode == MCUMAX_SEARCH_BEST_MOVE) &&
                                 (step_score != -MCUMAX_SCORE_MAX) &&
                                 (square_from == mcumax.square_from) &&
@@ -572,6 +579,14 @@ static int32_t mcumax_search(int32_t alpha,
                                  ~MCUMAX_BOARD_MASK)) != square_start);
 
     cutoff:
+        if ((mode == MCUMAX_SEARCH_BEST_MOVE) &&
+            !mcumax.stop_search && iter_depth >= 3 &&
+            iter_score > -MCUMAX_SCORE_MAX)
+        {
+            mcumax.completed_move = (mcumax_move){
+                iter_square_from, iter_square_to & ~MCUMAX_BOARD_MASK};
+        }
+
         // Check test thru NM best loses king: (stale)mate
         if ((iter_score == -MCUMAX_SCORE_MAX) &&
             (null_move_score != MCUMAX_SCORE_MAX))
@@ -874,6 +889,7 @@ static int32_t mcumax_start_search(enum mcumax_mode mode,
     mcumax.depth_max = depth_max;
 
     mcumax.stop_search = false;
+    mcumax.completed_move = MCUMAX_MOVE_INVALID;
 
     return mcumax_search(-MCUMAX_SCORE_MAX,
                          MCUMAX_SCORE_MAX,
@@ -899,6 +915,8 @@ mcumax_move mcumax_search_best_move(uint32_t node_max, uint32_t depth_max)
     int32_t score = mcumax_start_search(MCUMAX_SEARCH_BEST_MOVE,
                                         MCUMAX_MOVE_INVALID, depth_max + 3, node_max);
 
+    if (mcumax.stop_search)
+        return mcumax.completed_move;
     if (score == MCUMAX_SCORE_MAX)
         return (mcumax_move){mcumax.square_from, mcumax.square_to};
     else
