@@ -12,11 +12,20 @@
 - 源码 hash 默认关闭；启用时 `MCUMAX_HASH_TABLE_SIZE=(1<<24)`，不适合本设备。M2 保持关闭。日后小 TT 需显式补丁、编译期大小断言、链接 MAP 与实测，不仅翻转宏。
 - FEN 能重建局面，不能传全部重复历史。引擎评分对重复/50步的理解需单独核实；应用终局与申报仍由 core 决定。
 
+## 开局库（adapter）
+
+在 `mcumax_search_best_move` 之前，adapter 用 `chess_position_key` 的 34 字节做
+FNV-1a 64 位哈希，查一张编译进 Flash 的线性表（约 64 个局面、≤4 个加权候选）。
+`book_seed == 0` 永远走权重最高的主变（host CLI / `tools/elo_match.py` 默认即 0，无需改 harness）。
+产品新开局在 `start_ai_game` 时生成一次 `book_seed` 并整局保持不变；读档续走视为**已离开开局库**
+（`book_enabled = false`，不改存档 schema）。库着法经 `chess_make` 复验，非法则退回搜索。
+Easy 的 15% 随机着仅在离开库后生效。来源与再生成见 `components/chess_ai/BOOK_SOURCES.md`。
+
 ## 适配流程
 
 1. app 生成不可变 position/FEN、合法根着、generation、预算；无合法着直接由 core 判终局。
 2. worker 初始化并导入 FEN，注册带 context 的 callback，设置绝对 monotonic deadline。
-3. 先保留一枚 core 合法的保底着；调用搜索，节点/深度仅作为第二道资源护栏，**时间截止是主限制**。
+3. 先保留一枚 core 合法的保底着；若开局库命中则直接采用库着，否则调用搜索，节点/深度仅作为第二道资源护栏，**时间截止是主限制**。
 4. callback 以 clock 检查 deadline/cancel；按实测节奏让出 CPU（目标每2–5ms至少一次可阻塞 yield，不在每节点无条件 delay）。不能在 callback 里打印、绘制、写 NVS。
 5. 返回转换坐标和 promotion；app 只有在 generation 相同、轮到AI、非终局时才检查精确合法着并提交。
 6. 到达思考时限且存在完整层合法结果时正常返回最佳着；越界、无结果、引擎不支持、无完整层结果的超时及用户取消均有显式码；保底合法着只能在非用户取消且当前局面有效时采用。用户取消后不偷偷落子。

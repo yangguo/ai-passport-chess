@@ -49,6 +49,7 @@ static void test_suggest_startpos_legal(void) {
             &pos, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") ==
         CHESS_OK);
   CHECK(chess_ai_suggest(&pos, 200000, 3, &m) == 0);
+  CHECK(m.from == 12 && m.to == 28); /* opening book main line: e2e4 */
   CHECK(move_is_legal(&pos, m));
   /* The suggestion must survive the real game path. */
   CHECK(chess_game_init(&game, &pos) == CHESS_OK);

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **AI:** Seeded opening book in the mcu-max adapter (~64 positions, hand-written
+  lines in `opening_lines.txt`); `book_seed == 0` keeps host Elo harness reproducible.
+
 ## 0.1.0-design — 2026-10-06
 
 - 建立AI Passport Chess设计与实施契约，锁定参考来源。
