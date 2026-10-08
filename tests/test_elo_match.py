@@ -38,6 +38,11 @@ class CycleEngine:
 
 
 class EloMatchTests(unittest.TestCase):
+    def test_sf_skill_elo_ccrl_matches_sf17_curve(self):
+        self.assertAlmostEqual(elo_match.sf_skill_elo_ccrl(0), 1347, delta=2)
+        self.assertAlmostEqual(elo_match.sf_skill_elo_ccrl(3), 1729, delta=2)
+        self.assertAlmostEqual(elo_match.sf_skill_elo_ccrl(5), 2197, delta=3)
+
     def test_stops_when_threefold_draw_can_be_claimed(self):
         cli = CycleCli()
         result, pgn = play_game(cli, CycleEngine(), chess.WHITE, max_plies=16)

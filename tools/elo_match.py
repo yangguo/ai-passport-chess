@@ -7,11 +7,10 @@ referee (rules, termination); our chess-cli drives OUR moves via its
 at --skill. Both sides' moves are applied to both boards; any
 rejection aborts that game loudly instead of silently biasing.
 
-Score maps to an Elo difference against the ASSUMED anchor Elo of the
-chosen Stockfish skill level (table below is lore, not metrology):
-  skill 0 ~= 800, 3 ~= 1000, 5 ~= 1200, 8 ~= 1400, 10 ~= 1600.
-Read the result as "supports / does not support 1200", never as a
-certificate. Short TC, few games, wide error bars by construction.
+Score maps to an Elo difference against Stockfish's own skill-to-Elo
+mapping (CCRL blitz scale from SF 17.1 search.h; not human/Chess.com).
+Example anchors: skill 0 ~= 1347, 3 ~= 1729, 5 ~= 2197. Few games still
+mean wide error bars; this is engineering metrology, not a platform rating.
 
 Requires: python-chess (test dep, already pinned) and a Stockfish
 binary (user-provided --stockfish; NOT vendored, NOT firmware).
@@ -33,7 +32,18 @@ except ImportError:
     print("SKIP: python-chess not installed")
     sys.exit(0)
 
-ANCHORS = {0: 800, 3: 1000, 5: 1200, 8: 1400, 10: 1600}
+def sf_skill_elo_ccrl(skill):
+    """Invert Stockfish 17.1 search.h skill curve (CCRL blitz Elo scale)."""
+    lo, hi = 0.0, 1.0
+    level = float(skill)
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        v = ((37.2473 * mid - 40.8525) * mid + 22.2943) * mid - 0.311438
+        if v < level:
+            lo = mid
+        else:
+            hi = mid
+    return 1320.0 + lo * (3190.0 - 1320.0)
 
 
 class Cli:
@@ -203,17 +213,18 @@ def main():
     if played == 0:
         return 1
     rate = score / played
-    anchor = ANCHORS.get(args.skill, None)
-    if anchor is not None:
-        print("anchor assumption: stockfish skill %d ~= %d Elo (lore)"
-              % (args.skill, anchor))
+    anchor = sf_skill_elo_ccrl(args.skill)
+    print(
+        "opponent anchor: Stockfish skill %d ~= %.0f Elo "
+        "(SF17.1 CCRL blitz scale; not human/Chess.com)"
+        % (args.skill, anchor)
+    )
     if rate <= 0.0 or rate >= 1.0:
         print("elo diff: out of range (all wins or all losses)")
     else:
         diff = -400.0 * math.log10(1.0 / rate - 1.0)
         print("elo diff vs opponent: %+.0f" % diff)
-        if anchor is not None:
-            print("implied ours: ~%.0f Elo (+- wide bars)" % (anchor + diff))
+        print("implied ours: ~%.0f Elo (+- wide bars; same scale)" % (anchor + diff))
     return 0
 
 
