@@ -80,7 +80,8 @@ add_executable(test_opening_book
 target_include_directories(test_opening_book PRIVATE ${AI_INCLUDES})
 chess_ai_target_hash_bits(test_opening_book 12)
 add_test(NAME opening_book COMMAND test_opening_book)
-set_tests_properties(opening_book PROPERTIES TIMEOUT 600)
+# Sanitized CI runners can exceed 600s with TT=12 (PeSTO ~421s; NBK varies).
+set_tests_properties(opening_book PROPERTIES TIMEOUT 900)
 
 add_executable(test_mcumax_hash
   test_mcumax_hash.c
