@@ -152,6 +152,12 @@ void mcumax_hash_get_stats(struct mcumax_hash_stats *out);
 /** Nodes consumed by the last search (reset at search start). */
 uint32_t mcumax_get_last_search_nodes(void);
 
+void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth);
+
+#ifdef MCUMAX_EXPOSE_EVAL
+int32_t mcumax_eval_nbk_pst_score(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
