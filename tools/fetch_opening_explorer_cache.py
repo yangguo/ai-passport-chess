@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fetch Lichess opening-explorer move counts into a reproducible JSON cache.
 
-Uses explorer.lichess.org (lichess DB, ratings 1600–2200). When the API is
-unreachable (HTTP errors), falls back to documented curated move counts so
+Uses explorer.lichess.ovh/lichess (lichess DB, ratings 1600–2200). When the API
+is unreachable (HTTP errors), falls back to documented curated move counts so
 offline builds stay deterministic.
 """
 from __future__ import annotations
@@ -24,15 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from opening_book_lib import (  # noqa: E402
-    CHESS_OPENINGS_DIR,
-    MIN_PLIES,
-    MAX_PLIES,
-    OPENING_NEEDLES,
     RESP_PREFIXES,
     fen_key,
     load_chess_openings_rows,
-    pgn_to_uci_moves,
     select_opening_lines,
+)
+from opening_explorer_fallback import (  # noqa: E402
+    build_fallback_cache_payload,
+    curated_for_board,
 )
 
 CACHE_PATH = ROOT / "tools/data/opening_explorer_cache.json"
@@ -40,77 +39,6 @@ RATINGS = [1600, 1800, 2000, 2200]
 EXPLORER_URL = os.environ.get(
     "LICHESS_EXPLORER_URL", "https://explorer.lichess.ovh/lichess"
 )
-
-# Curated mid-rating popularity (games-weighted), used only when API fails.
-# Ratios follow public Lichess opening-explorer lore; not a live snapshot.
-CURATED_ROOT = {
-    "e2e4": 44_000_000,
-    "d2d4": 34_000_000,
-    "g1f3": 11_000_000,
-    "c2c4": 9_000_000,
-    "b1c3": 1_200_000,
-    "f2f4": 800_000,
-}
-
-CURATED_AFTER_E4 = {
-    "e7e5": 18_000_000,
-    "c7c5": 14_000_000,
-    "e7e6": 6_500_000,
-    "c7c6": 4_000_000,
-    "g8f6": 3_500_000,
-    "d7d5": 2_800_000,
-    "g7g6": 900_000,
-}
-
-CURATED_AFTER_D4 = {
-    "d7d5": 12_000_000,
-    "g8f6": 10_000_000,
-    "e7e6": 4_000_000,
-    "f7f5": 1_500_000,
-    "c7c5": 1_200_000,
-}
-
-CURATED_AFTER_NF3 = {
-    "d7d5": 8_000_000,
-    "g8f6": 7_500_000,
-    "c7c5": 2_000_000,
-    "e7e6": 1_800_000,
-}
-
-CURATED_AFTER_C4 = {
-    "e7e5": 5_500_000,
-    "c7c5": 4_500_000,
-    "e7e6": 3_000_000,
-    "g8f6": 2_500_000,
-    "c7c6": 1_500_000,
-}
-
-
-def curated_for_board(board: chess.Board) -> dict[str, int]:
-    """Heuristic move counts for common book nodes."""
-    fen = board.fen()
-    if board.fullmove_number == 1 and board.turn == chess.WHITE:
-        return dict(CURATED_ROOT)
-    if fen.startswith("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b"):
-        return dict(CURATED_AFTER_E4)
-    if fen.startswith("rnbqkbnr/pppppppp/8/8/3P4/8/PPP2PPP/RNBQKBNR b"):
-        return dict(CURATED_AFTER_D4)
-    if fen.startswith("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b"):
-        return dict(CURATED_AFTER_NF3)
-    if fen.startswith("rnbqkbnr/pppp1ppp/8/2p5/2P5/8/PP1PPPPP/RNBQKBNR b"):
-        return dict(CURATED_AFTER_C4)
-    # Generic: prefer developing moves / central pawns slightly.
-    out: dict[str, int] = {}
-    for mv in board.legal_moves:
-        uci = mv.uci()
-        score = 1_000_000
-        piece = board.piece_at(mv.from_square)
-        if piece and piece.piece_type == chess.PAWN:
-            score += 500_000
-        if piece and piece.piece_type in (chess.KNIGHT, chess.BISHOP):
-            score += 300_000
-        out[uci] = score
-    return out
 
 
 def collect_book_fens() -> list[str]:
@@ -129,7 +57,7 @@ def collect_book_fens() -> list[str]:
         board.reset()
         for uci in prefix:
             board.push(chess.Move.from_uci(uci))
-            fens.add(fen_key(board))
+        fens.add(fen_key(board))
     return sorted(fens)
 
 
@@ -182,6 +110,22 @@ def fetch_lichess(fen: str, timeout: float = 20.0, retries: int = 5) -> dict[str
     return out
 
 
+def write_fallback_cache(out: Path) -> int:
+    fens = collect_book_fens()
+    payload = build_fallback_cache_payload(
+        fens,
+        snapshot_date=date.today().isoformat(),
+        explorer_url=EXPLORER_URL,
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(
+        "Wrote %d fallback positions to %s" % (len(fens), out),
+        file=sys.stderr,
+    )
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=CACHE_PATH)
@@ -192,7 +136,15 @@ def main() -> int:
         help="seconds between API calls (>=1 req/s limit)",
     )
     ap.add_argument("--max", type=int, default=0, help="limit FENs (0=all)")
+    ap.add_argument(
+        "--force-fallback",
+        action="store_true",
+        help="skip API; write curated_fallback cache for all book FENs",
+    )
     args = ap.parse_args()
+
+    if args.force_fallback:
+        return write_fallback_cache(args.out)
 
     fens = collect_book_fens()
     if args.max:

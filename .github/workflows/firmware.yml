@@ -32,6 +32,7 @@ jobs:
         run: |
           python3 -m pip install -r tools/chess_diff_requirements.txt
           python3 -m unittest tests/test_elo_match.py
+          python3 -m unittest tests/test_opening_fallback.py
       - name: Opening book validation
         run: |
           python3 -m pip install -r tools/chess_diff_requirements.txt

@@ -38,7 +38,7 @@ CACHE_PATH = ROOT / "tools/data/opening_explorer_cache.json"
 ROOT_WHITE = {"e2e4", "d2d4", "g1f3", "c2c4"}
 
 
-def emit_c(table: dict[int, dict[tuple[int, int], int]]) -> None:
+def emit_c(table: dict[int, dict[tuple[int, int], int]], out_c: Path = OUT_C) -> None:
     entries = []
     for kh in sorted(table.keys()):
         moves = table[kh]
@@ -191,7 +191,7 @@ def emit_c(table: dict[int, dict[tuple[int, int], int]]) -> None:
     lines.append("  return 0;")
     lines.append("}")
 
-    OUT_C.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out_c.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     h = """/* Position-keyed opening book (adapter layer). Generated table in opening_book.c. */
 #ifndef OPENING_BOOK_H
@@ -296,6 +296,8 @@ def main() -> int:
     ap.add_argument("--cache", type=Path, default=CACHE_PATH)
     ap.add_argument("--check-keys", action="store_true",
                     help="print SHA256 of sorted key list for tests")
+    ap.add_argument("--out-c", type=Path, default=OUT_C,
+                    help="output opening_book.c path (default: shipped file)")
     args = ap.parse_args()
 
     if not args.cache.is_file():
@@ -342,17 +344,21 @@ def main() -> int:
         print(digest)
         return 0
 
+    try:
+        cache_path_meta = str(args.cache.relative_to(ROOT))
+    except ValueError:
+        cache_path_meta = str(args.cache)
     emit_lines_txt(
         args.lines,
         specs,
         {
-            "cache_path": str(args.cache.relative_to(ROOT)),
+            "cache_path": cache_path_meta,
             "primary_source": cache_meta.get("primary_source"),
             "snapshot_date": cache_meta.get("snapshot_date"),
         },
     )
-    emit_c(table)
-    print("Wrote %u positions to %s" % (len(table), OUT_C), file=sys.stderr)
+    emit_c(table, args.out_c)
+    print("Wrote %u positions to %s" % (len(table), args.out_c), file=sys.stderr)
     return 0
 
 

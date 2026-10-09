@@ -34,7 +34,9 @@ python3 tools/fetch_opening_explorer_cache.py
 The fetch script rate-limits (~1.1 s between requests) and backs off 60 s on
 HTTP 429. If the API is unreachable and no valid cache is checked in, the
 script can still fall back to documented ratios in
-`tools/fetch_opening_explorer_cache.py` (not used for the current snapshot).
+`tools/opening_explorer_fallback.py` (keys derived via python-chess from move
+prefixes; not used for the current snapshot). CI runs
+`tests/test_opening_fallback.py` on the offline path.
 
 ### …c6 after 1.e4 (excluded by the four-move cap)
 
