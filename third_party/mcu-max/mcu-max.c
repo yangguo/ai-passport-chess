@@ -75,6 +75,9 @@ struct
     // Local patch: only a fully completed root iteration may survive stop.
     mcumax_move completed_move;
 
+    uint32_t last_search_nodes;
+    uint32_t last_search_iter_depth;
+
     // Extra
     mcumax_callback user_callback;
     void *user_data;
@@ -216,6 +219,94 @@ static void mcumax_apply_castling_rights(uint8_t rights)
             mcumax_mark_square_moved(0x00);
     }
 }
+
+/* Knight/bishop/king PST (flash); see mcumax_nbk_tables.h and SOURCES.md. */
+#include "mcumax_nbk_tables.h"
+
+static uint8_t mcumax_nbk_dense_index(uint8_t sq)
+{
+    return ((sq >> 4) << 3) | (sq & 7u);
+}
+
+static int8_t mcumax_nbk_lookup(uint8_t scan_piece_type,
+                                uint8_t scan_piece,
+                                mcumax_square square)
+{
+    uint8_t sq = square & 0x77u;
+    uint8_t idx;
+
+    if (scan_piece & MCUMAX_BOARD_BLACK)
+        sq ^= 0x70u;
+
+    idx = mcumax_nbk_dense_index(sq);
+
+    if (scan_piece_type == 3)
+        return mcumax_nbk_knight[idx];
+    if (scan_piece_type == 5)
+        return mcumax_nbk_bishop[idx];
+    if (scan_piece_type == 4)
+    {
+        if (mcumax.non_pawn_material > 30)
+            return mcumax_nbk_king_eg[idx];
+        return mcumax_nbk_king_mg[idx];
+    }
+
+    return 0;
+}
+
+static int32_t mcumax_positional_delta(uint8_t scan_piece_type,
+                                       uint8_t scan_piece,
+                                       mcumax_square from,
+                                       mcumax_square to)
+{
+    int32_t center = 0;
+
+    if (scan_piece_type < 6)
+    {
+        center = (int32_t)mcumax.board[from + 0x8] -
+                 (int32_t)mcumax.board[to + 0x8];
+    }
+
+    if (scan_piece_type == 3 || scan_piece_type == 4 || scan_piece_type == 5)
+    {
+        return center +
+               (int32_t)mcumax_nbk_lookup(scan_piece_type, scan_piece, to) -
+               (int32_t)mcumax_nbk_lookup(scan_piece_type, scan_piece, from);
+    }
+
+    return center;
+}
+
+#ifdef MCUMAX_EXPOSE_EVAL
+int32_t mcumax_eval_nbk_pst_score(void)
+{
+    int32_t white = 0;
+    int32_t black = 0;
+
+    for (uint32_t square = 0; square < 0x80; square++)
+    {
+        uint8_t piece;
+        uint8_t scan_piece_type;
+
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        piece = mcumax.board[square];
+        scan_piece_type = piece & 0b111;
+        if (!scan_piece_type)
+            continue;
+
+        if (piece & MCUMAX_BOARD_WHITE)
+            white += mcumax_nbk_lookup(scan_piece_type, piece, (mcumax_square)square);
+        else if (piece & MCUMAX_BOARD_BLACK)
+            black += mcumax_nbk_lookup(scan_piece_type, piece, (mcumax_square)square);
+    }
+
+    if (mcumax.current_side == MCUMAX_BOARD_WHITE)
+        return white - black;
+    return black - white;
+}
+#endif
 
 #if MCUMAX_HASH_BITS > 0
 
@@ -582,11 +673,10 @@ static int32_t mcumax_search(int32_t alpha,
                         // All captures if depth == 2
                         if ((iter_depth - !capture_piece) > 1)
                         {
-                            // Center positional score
-                            step_score = (scan_piece_type < 6)
-                                             ? mcumax.board[square_from + 0x8] -
-                                                   mcumax.board[square_to + 0x8]
-                                             : 0;
+                            step_score = mcumax_positional_delta(scan_piece_type,
+                                                                 scan_piece,
+                                                                 square_from,
+                                                                 square_to);
 
                             mcumax.board[castling_rook_square] =
                                 mcumax.board[capture_square] =
@@ -806,6 +896,8 @@ static int32_t mcumax_search(int32_t alpha,
         {
             mcumax.completed_move = (mcumax_move){
                 iter_square_from, iter_square_to & ~MCUMAX_BOARD_MASK};
+            if (mode == MCUMAX_SEARCH_BEST_MOVE)
+                mcumax.last_search_iter_depth = iter_depth;
         }
 
         // Check test thru NM best loses king: (stale)mate
@@ -1135,6 +1227,8 @@ static int32_t mcumax_start_search(enum mcumax_mode mode,
 
     mcumax.stop_search = false;
     mcumax.completed_move = MCUMAX_MOVE_INVALID;
+    mcumax.last_search_nodes = 0;
+    mcumax.last_search_iter_depth = 0;
 
 #ifdef MCUMAX_HASHING_ENABLED
     mcumax_hash_reset_stats();
@@ -1164,6 +1258,8 @@ mcumax_move mcumax_search_best_move(uint32_t node_max, uint32_t depth_max)
     int32_t score = mcumax_start_search(MCUMAX_SEARCH_BEST_MOVE,
                                         MCUMAX_MOVE_INVALID, depth_max + 3, node_max);
 
+    mcumax.last_search_nodes = mcumax.node_count;
+
     if (mcumax.stop_search)
         return mcumax.completed_move;
     if (score == MCUMAX_SCORE_MAX)
@@ -1191,7 +1287,15 @@ void mcumax_stop_search(void)
 
 uint32_t mcumax_get_last_search_nodes(void)
 {
-    return mcumax.node_count;
+    return mcumax.last_search_nodes ? mcumax.last_search_nodes : mcumax.node_count;
+}
+
+void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth)
+{
+    if (nodes != NULL)
+        *nodes = mcumax.last_search_nodes ? mcumax.last_search_nodes : mcumax.node_count;
+    if (iter_depth != NULL)
+        *iter_depth = mcumax.last_search_iter_depth;
 }
 
 #if MCUMAX_HASH_BITS > 0

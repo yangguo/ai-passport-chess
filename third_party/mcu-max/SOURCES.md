@@ -91,3 +91,22 @@ No hash table, allocation, public engine API, or depth-limit change.
 Regression: real engine + deterministic clock at a deadline must retain
 Rxe4 against an exposed queen; expiration before a completed iteration
 still falls back, and user cancellation never plays a move.
+
+## Local patch 2026-10-10: capped knight/bishop/king PST (PST round 2)
+
+Adds four `int8` planes in flash (knight MG, bishop MG, king MG/EG) on top
+of the existing micro-Max terms: pawn centre table + structure, castling
+`+50`, king freeze `−20`, promotion/passers unchanged. Knight, bishop, and
+king quiet moves use **centre delta + (nbk(to)−nbk(from))**; the cap applies
+to the NBK component only.
+
+| Item | Detail |
+|---|---|
+| Source shape | **PeSTO** PST values via `tools/pesto_source.py` (MIT, Karls-Sun/pesto.py) |
+| Generator | `tools/gen_nbk_pst.py` → `mcumax_nbk_tables.h` (engine units, scaled to cap) |
+| Cap | `MCUMAX_NBK_PST_DELTA_CAP` 32 engine units per quiet move (`|pst(to)−pst(from)|`) |
+| King phase | Endgame king plane when `non_pawn_material > 30` (same gate as king freeze) |
+| Black | Rank mirror `square ^ 0x70` at lookup |
+| RAM | 0 (`.rodata` only) |
+
+Host tests: `tests/host/test_pst_nbk.c` (`MCUMAX_EXPOSE_EVAL`).
