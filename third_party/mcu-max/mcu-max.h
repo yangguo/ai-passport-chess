@@ -121,6 +121,14 @@ void mcumax_set_callback(mcumax_callback callback, void *userdata);
  */
 void mcumax_stop_search(void);
 
+#ifdef MCUMAX_EXPOSE_EVAL
+/** Side-to-move PST total from the board (engine units). */
+int32_t mcumax_eval_pst_score(void);
+
+/** Recompute PST from the board (host tests). */
+int32_t mcumax_eval_pst_from_scratch(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

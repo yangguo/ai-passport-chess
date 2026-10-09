@@ -4,6 +4,9 @@
 
 - **AI:** Seeded opening book in the mcu-max adapter (~64 positions, hand-written
   lines in `opening_lines.txt`); `book_seed == 0` keeps host Elo harness reproducible.
+- **Engine:** Per-piece flash PST in `mcu-max` (replaces shared centre weights);
+  original `int8` tables, incremental `pst(to)-pst(from)` on quiet moves; host
+  `test_pst` covers no-book openings and PST consistency.
 
 ## 0.1.0-design — 2026-10-06
 

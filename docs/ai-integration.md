@@ -12,6 +12,14 @@
 - 源码 hash 默认关闭；启用时 `MCUMAX_HASH_TABLE_SIZE=(1<<24)`，不适合本设备。M2 保持关闭。日后小 TT 需显式补丁、编译期大小断言、链接 MAP 与实测，不仅翻转宏。
 - FEN 能重建局面，不能传全部重复历史。引擎评分对重复/50步的理解需单独核实；应用终局与申报仍由 core 决定。
 
+## 位置分（mcu-max PST）
+
+共用中心权重已换成按棋子类型的 flash `int8` 表（兵/马/象/车/后/王中局与残局），
+走子时仍用 `pst(to)-pst(from)` 增量更新；兵结构、通路兵与升变项（含第 8 行加分）
+未改，避免与第 7 行兵重复计分。表值为本仓库原创，形状参考公开棋理而非复制 PeSTO
+等数据；许可说明见 `third_party/mcu-max/SOURCES.md`。开局库命中时产品路径仍先走库；
+PST 回归在 host 上直接调用 `mcumax_search_best_move`（无库）验证。
+
 ## 开局库（adapter）
 
 在 `mcumax_search_best_move` 之前，adapter 用 `chess_position_key` 的 34 字节做

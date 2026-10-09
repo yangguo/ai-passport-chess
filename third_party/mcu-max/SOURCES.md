@@ -77,3 +77,29 @@ No hash table, allocation, public engine API, or depth-limit change.
 Regression: real engine + deterministic clock at a deadline must retain
 Rxe4 against an exposed queen; expiration before a completed iteration
 still falls back, and user cancellation never plays a move.
+
+## Local patch 2026-10-09: per-piece PST (engine-strength M2)
+
+Replaced the shared incremental center weights in the 0x88 board right half
+(`board[square+8]`) with per-piece-type `int8_t` tables in flash (`static
+const`, 7×64 bytes + scale factor `MCUMAX_PST_SCALE=4` applied in lookup as
+`int32_t` to avoid overflow). Pawn structure, passer/promotion bonuses
+(393–416), castling +50, king freeze (−20), and the completed-iteration
+deadline patch are unchanged.
+
+**Rationale (original values):** magnitudes stay within about ±20 table units
+before scale (pawn material = 74 engine units). Pawns favour central `e`/`d`
+breaks and penalise early `a/h/c/f` one-steps; knights favour `c3`/`f3`/`e4`
+development squares; bishops and rooks get modest centre/seventh-rank shape;
+queen terms stay small; kings use separate middlegame (shelter) vs endgame
+(centralise) tables keyed off existing `non_pawn_material > 30`.
+
+**Licensing / sources:** table *shapes* follow widely published chess heuristics
+(e.g. CPW “Simplified Evaluation Function”); **numeric grids are authored for
+this repository** — not copied from PeSTO, Michniewski, Sunfish, or other
+GPL/unclear-licence PST dumps. Documented in patch comments in `mcu-max.c`.
+
+Host tests: `tests/host/test_pst.c` (`MCUMAX_EXPOSE_EVAL` exposes scratch PST
+totals for consistency checks). Opening-book tests remain separate; PST
+regressions call `mcumax_search_best_move` directly so evaluation changes are
+visible with the book disabled.

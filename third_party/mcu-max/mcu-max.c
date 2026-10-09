@@ -100,6 +100,139 @@ static const int8_t mcumax_board_setup[] = {
     MCUMAX_ROOK,
 };
 
+/* Piece-square tables (original values; shapes informed by common chess
+ * heuristics, not copied from PeSTO/Michniewski/Sunfish). Rank 0 = board
+ * rank 8 (mcu-max 0xRF), files a–h. White-oriented; black mirrors rank. */
+#define MCUMAX_PST_SCALE 4
+
+enum mcumax_pst_kind
+{
+    MCUMAX_PST_PAWN = 0,
+    MCUMAX_PST_KNIGHT,
+    MCUMAX_PST_BISHOP,
+    MCUMAX_PST_ROOK,
+    MCUMAX_PST_QUEEN,
+    MCUMAX_PST_KING_MG,
+    MCUMAX_PST_KING_EG,
+    MCUMAX_PST_KIND_COUNT,
+};
+
+static const int8_t mcumax_pst[MCUMAX_PST_KIND_COUNT][64] = {
+    /* pawn: discourage early flank one-steps; prefer central e/d breaks */
+    {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 4, 4, 2, 1, 1, -2, -2, 0, 2, 2, 0, -2, -2,
+     -12, -20, -20, 6, 6, -20, -20, -12, -2, 0, 10, 22, 22, 10, 0, -2, -4, -2, 4,
+     12, 12, 4, -2, -4, -4, -2, 4, 12, 12, 4, -2, -4, 0, 0, 0, 0, 0, 0, 0, 0},
+    /* knight */
+    {-10, -10, -10, -10, -10, -10, -10, -10, -8, -5, -2, -2, -2, -2, -5, -8, -8,
+     -2, 4, 8, 8, 4, -2, -8, -8, -4, 6, 12, 12, 6, -4, -8, -8, -4, 6, 12, 12, 6,
+     -4, -8, -8, -4, 40, 22, 22, 40, -4, -8, -8, -4, 6, 10, 10, 6, -4, -8, -10,
+     -10, -10, -10, -10, -10, -10, -10},
+    /* bishop */
+    {-5, -5, -5, -5, -5, -5, -5, -5, -5, -2, 2, 4, 4, 2, -2, -5, -5, 0, 6, 8, 8,
+     6, 0, -5, -5, 2, 6, 10, 10, 6, 2, -5, -5, 2, 6, 10, 10, 6, 2, -5, -5, 0, 6,
+     8, 8, 6, 0, -5, -5, -2, 2, 4, 4, 2, -2, -5, -5, -5, -5, -5, -5, -5, -5, -5},
+    /* rook */
+    {0, 2, 4, 6, 6, 4, 2, 0, 4, 6, 8, 10, 10, 8, 6, 4, 12, 14, 16, 16, 16, 16,
+     14, 12, 4, 6, 8, 10, 10, 8, 6, 4, 2, 4, 6, 8, 8, 6, 4, 2, 2, 4, 6, 8, 8,
+     6, 4, 2, 0, 2, 4, 6, 6, 4, 2, 0, 0, 2, 4, 6, 6, 4, 2, 0},
+    /* queen (small; material dominates) */
+    {-8, -4, -2, -2, -2, -2, -4, -8, -6, -2, 0, 2, 2, 0, -2, -6, -4, 0, 2, 4,
+     4, 2, 0, -4, -4, 0, 2, 6, 6, 2, 0, -4, -4, 0, 2, 6, 6, 2, 0, -4, -4, 0,
+     2, 4, 4, 2, 0, -4, -6, -2, 0, 2, 2, 0, -2, -6, -8, -4, -2, -2, -2, -2,
+     -4, -8},
+    /* king middlegame: shelter on g/c files, avoid center */
+    {-20, -20, -20, -20, -20, -20, -20, -20, -20, -20, -20, -20, -20, -20,
+     -20, -20, -12, -12, -12, -12, -12, -12, -12, -12, -8, -8, -8, -8, -8,
+     -8, -8, -8, -4, -4, -4, -4, -4, -4, -4, -4, -12, 14, 16, -8, -20, 14,
+     18, -12, -15, -12, 14, -8, -20, 12, 16, -12, -15, -12, 14, -8, -20, 12,
+     16, -12},
+    /* king endgame: centralize */
+    {-12, -12, -12, -12, -12, -12, -12, -12, -8, -8, -8, -8, -8, -8, -8, -8,
+     -4, -4, 0, 0, 0, 0, -4, -4, 0, 0, 4, 8, 8, 4, 0, 0, 0, 0, 6, 12, 12, 6,
+     0, 0, 0, 0, 6, 14, 14, 6, 0, 0, 0, 0, 4, 10, 10, 4, 0, 0, -8, -8, -8,
+     -8, -8, -8, -8, -8},
+};
+
+static uint8_t mcumax_pst_kind_for_piece(uint8_t scan_piece_type)
+{
+    if (scan_piece_type < 3)
+        return MCUMAX_PST_PAWN;
+    if (scan_piece_type == 3)
+        return MCUMAX_PST_KNIGHT;
+    if (scan_piece_type == 4)
+        return (mcumax.non_pawn_material > 30) ? MCUMAX_PST_KING_EG : MCUMAX_PST_KING_MG;
+    if (scan_piece_type == 5)
+        return MCUMAX_PST_BISHOP;
+    if (scan_piece_type == 6)
+        return MCUMAX_PST_ROOK;
+    return MCUMAX_PST_QUEEN;
+}
+
+static uint8_t mcumax_pst_index(mcumax_square square)
+{
+    return ((square >> 4) * 8) + (square & 7);
+}
+
+static int32_t mcumax_pst_lookup(uint8_t scan_piece, mcumax_square square)
+{
+    uint8_t scan_piece_type = scan_piece & 0b111;
+    uint8_t kind;
+    mcumax_square sq;
+
+    if (!scan_piece_type)
+        return 0;
+
+    kind = mcumax_pst_kind_for_piece(scan_piece_type);
+    sq = square & 0x77;
+    if (scan_piece & MCUMAX_BOARD_BLACK)
+        sq ^= 0x70;
+
+    return MCUMAX_PST_SCALE * (int32_t)mcumax_pst[kind][mcumax_pst_index(sq)];
+}
+
+_Static_assert(sizeof(mcumax_pst[0]) == 64, "mcumax PST planes must be 64 squares");
+
+#ifdef MCUMAX_EXPOSE_EVAL
+static int32_t mcumax_pst_side_sum(mcumax_piece side)
+{
+    int32_t sum = 0;
+
+    for (uint32_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        mcumax_piece piece = mcumax.board[square];
+        if (!(piece & side) || !(piece & 0b111))
+            continue;
+
+        sum += mcumax_pst_lookup(piece, (mcumax_square)square);
+    }
+
+    return sum;
+}
+
+int32_t mcumax_eval_pst_score(void)
+{
+    int32_t white = mcumax_pst_side_sum(MCUMAX_BOARD_WHITE);
+    int32_t black = mcumax_pst_side_sum(MCUMAX_BOARD_BLACK);
+
+    if (mcumax.current_side == MCUMAX_BOARD_WHITE)
+        return white - black;
+    return black - white;
+}
+
+int32_t mcumax_eval_pst_from_scratch(void)
+{
+    int32_t white = mcumax_pst_side_sum(MCUMAX_BOARD_WHITE);
+    int32_t black = mcumax_pst_side_sum(MCUMAX_BOARD_BLACK);
+
+    if (mcumax.current_side == MCUMAX_BOARD_WHITE)
+        return white - black;
+    return black - white;
+}
+#endif
+
 #ifdef MCUMAX_HASHING_ENABLED
 
 #define MCUMAX_HASH_SCRAMBLE_TABLE_SIZE 1035
@@ -364,10 +497,10 @@ static int32_t mcumax_search(int32_t alpha,
                         // All captures if depth == 2
                         if ((iter_depth - !capture_piece) > 1)
                         {
-                            // Center positional score
-                            step_score = (scan_piece_type < 6)
-                                             ? mcumax.board[square_from + 0x8] -
-                                                   mcumax.board[square_to + 0x8]
+                            // Piece-square positional score
+                            step_score = scan_piece_type
+                                             ? (mcumax_pst_lookup(scan_piece, square_to) -
+                                                mcumax_pst_lookup(scan_piece, square_from))
                                              : 0;
 
                             mcumax.board[castling_rook_square] =
@@ -638,9 +771,9 @@ void mcumax_init()
         mcumax.board[0x10 * 6 + x] = MCUMAX_BOARD_WHITE | MCUMAX_PAWN_UPSTREAM;
         mcumax.board[0x10 * 7 + x] = MCUMAX_BOARD_WHITE | mcumax_board_setup[x];
 
-        // Setup weights (right side)
+        // Right half: keep 0x88 padding only (PST lives in flash).
         for (uint32_t y = 0; y < 8; y++)
-            mcumax.board[16 * y + x + 8] = (x - 4) * (x - 4) + (y - 4) * (y - 3);
+            mcumax.board[16 * y + x + 8] = 0;
     }
     mcumax.current_side = MCUMAX_BOARD_WHITE;
 
@@ -879,6 +1012,7 @@ void mcumax_set_fen_position(const char *fen_string)
             break;
         }
     }
+
 }
 
 mcumax_piece mcumax_get_current_side(void)
