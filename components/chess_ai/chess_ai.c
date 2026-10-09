@@ -146,6 +146,7 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
     job->outcome = CHESS_AI_ENGINE_ERROR;
     job->result_generation = req->generation;
     job->callback_count = 0;
+    s_callback_ctx.job = NULL;
 
     if (!collect_legal(&req->position, legal, CHESS_MAX_MOVES, &count) ||
         count == 0) {
@@ -167,6 +168,7 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
         job->best = mapped;
         job->has_best = true;
         job->outcome = CHESS_AI_OK;
+        s_callback_ctx.job = NULL;
         return;
     }
     if (chess_position_to_fen(&req->position, fen, sizeof(fen)) != CHESS_OK) {
@@ -178,14 +180,16 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
     job->deadline_at_ms = job->started_at_ms + req->deadline_ms;
     job->last_yield_ms = job->started_at_ms;
     s_callback_ctx.job = job;
-    mcumax_set_callback(engine_callback, &s_callback_ctx);
     mcumax_set_fen_position(fen);
+    mcumax_set_callback(engine_callback, &s_callback_ctx);
     reply = mcumax_search_best_move(req->node_max, req->depth_max);
     mcumax_set_callback(NULL, NULL);
+    s_callback_ctx.job = NULL;
 
     if (job->cancel) {
         job->has_fallback = false;
         job->outcome = CHESS_AI_CANCELLED;
+        s_callback_ctx.job = NULL;
         return;
     }
     if (job->clock != NULL && job->clock(job->clock_ctx) >= job->deadline_at_ms) {
@@ -203,6 +207,7 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
         if (!squares_ok) {
             job->outcome =
                 timed_out ? CHESS_AI_TIMEOUT : CHESS_AI_ENGINE_ERROR;
+            s_callback_ctx.job = NULL;
             return;
         }
         mapped.from = (uint8_t)((7u - rank) * 8u + file);
@@ -217,6 +222,7 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
     probe = req->position;
     if (chess_make(&probe, mapped, &undo) != CHESS_OK) {
         job->outcome = timed_out ? CHESS_AI_TIMEOUT : CHESS_AI_ENGINE_ERROR;
+        s_callback_ctx.job = NULL;
         return;
     }
     /* A deadline with a validated completed-iteration result is normal.

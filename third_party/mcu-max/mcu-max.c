@@ -647,6 +647,16 @@ void mcumax_init()
     mcumax.score = 0;
     mcumax.en_passant_square = MCUMAX_SQUARE_INVALID;
     mcumax.non_pawn_material = 0;
+    mcumax.stop_search = false;
+    mcumax.completed_move = MCUMAX_MOVE_INVALID;
+    mcumax.square_from = MCUMAX_SQUARE_INVALID;
+    mcumax.square_to = MCUMAX_SQUARE_INVALID;
+    mcumax.node_count = 0;
+    mcumax.valid_moves_buffer = NULL;
+    mcumax.valid_moves_buffer_size = 0;
+    mcumax.valid_moves_num = 0;
+    mcumax.user_callback = NULL;
+    mcumax.user_data = NULL;
 
 #ifdef MCUMAX_HASHING_ENABLED
     mcumax.hash_key = 0;

@@ -254,6 +254,43 @@ static void test_resp_after_c3(void) {
   CHECK(m.from == 51 && m.to == 35); /* d7d5 */
 }
 
+static void test_search_then_book_probe(void) {
+  /* Regression: many engine searches must not break later book probes
+   * (device path: search a move, later transposition back into book). */
+  chess_ai_request req;
+  chess_ai_job job;
+  fake_clock clock;
+  chess_position pos;
+  chess_move m;
+  int i;
+  memset(&clock, 0, sizeof(clock));
+  memset(&req, 0, sizeof(req));
+  CHECK(chess_position_from_fen(&req.position, START_FEN) == CHESS_OK);
+  req.level = CHESS_AI_EASY;
+  req.book_enabled = false;
+  req.easy_seed = 99;
+  chess_ai_level_budgets(CHESS_AI_EASY, &req.deadline_ms, &req.node_max,
+                         &req.depth_max);
+  for (i = 0; i < 120; i++) {
+    memset(&job, 0, sizeof(job));
+    req.easy_seed = (uint32_t)(i + 1);
+    job.clock = fake_now;
+    job.clock_ctx = &clock;
+    chess_ai_run_job(&job, &req);
+    CHECK(job.outcome == CHESS_AI_OK);
+    CHECK(job.callback_count > 0);
+  }
+  CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
+  CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
+  CHECK(m.from == 12 && m.to == 28);
+  CHECK(chess_opening_book_probe(&pos, 17u, true, &m));
+  CHECK(m.from == 11 && m.to == 27);
+  CHECK(chess_opening_book_probe(&pos, 8u, true, &m));
+  CHECK(m.from == 6 && m.to == 21);
+  CHECK(chess_opening_book_probe(&pos, 1u, true, &m));
+  CHECK(m.from == 10 && m.to == 26);
+}
+
 static void test_root_first_move_weights(void) {
   chess_position pos;
   chess_move m;
@@ -268,7 +305,15 @@ static void test_root_first_move_weights(void) {
   CHECK(m.from == 10 && m.to == 26); /* c4 at 60 */
 }
 
-int main(void) {
+static int run_suite(int engine_search_first) {
+  int before = failures;
+  if (engine_search_first) {
+    test_book_hit_skips_search();
+    test_book_miss_uses_search();
+    test_easy_no_random_in_book();
+    test_easy_random_out_of_book();
+    test_search_then_book_probe();
+  }
   test_start_seed0_e4();
   test_black_vs_e4_e5();
   test_seed0_two_ply_line();
@@ -277,17 +322,23 @@ int main(void) {
   test_resp_after_e3();
   test_resp_after_c3();
   test_root_first_move_weights();
-  /* run_job tests last: mcu-max global state can affect later probes if mixed. */
-  test_book_hit_skips_search();
-  test_book_miss_uses_search();
-  test_easy_no_random_in_book();
-  test_easy_random_out_of_book();
-
-  if (failures == 0) {
-    printf("PASS: all test_opening_book checks passed (%zu book positions)\n",
-           chess_opening_book_position_count());
-    return 0;
+  if (!engine_search_first) {
+    test_book_hit_skips_search();
+    test_book_miss_uses_search();
+    test_easy_no_random_in_book();
+    test_easy_random_out_of_book();
+    test_search_then_book_probe();
   }
-  printf("FAILURES: %d\n", failures);
-  return 1;
+  return failures != before;
+}
+
+int main(void) {
+  if (run_suite(0) != 0 || run_suite(1) != 0) {
+    printf("FAILURES: %d\n", failures);
+    return 1;
+  }
+  printf("PASS: all test_opening_book checks passed (%zu book positions, "
+         "both orderings)\n",
+         chess_opening_book_position_count());
+  return 0;
 }

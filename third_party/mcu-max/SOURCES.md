@@ -17,6 +17,9 @@
 - Cancellation path exists: `mcumax_set_callback` +
   `mcumax_stop_search` (callback fires periodically during search) —
   this is what the firmware worker (Task 10) builds its deadline on
+- Local patch: `mcumax_init` clears interface fields (callback,
+  valid-move buffer pointers, stop flag) on every `set_fen` so a
+  search cannot leave stale globals for the next adapter call
 - Hash table OFF by default (`MCUMAX_HASHING_ENABLED` commented out);
   enabling pulls a 2^24-entry table — never enable on-device
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
