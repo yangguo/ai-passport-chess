@@ -85,3 +85,25 @@ No hash table, allocation, public engine API, or depth-limit change.
 Regression: real engine + deterministic clock at a deadline must retain
 Rxe4 against an exposed queen; expiration before a completed iteration
 still falls back, and user cancellation never plays a move.
+
+## Local patch 2026-10-10: PeSTO tapered PST (PST round 2 remeasure)
+
+Replaced the shared incremental centre weights (`board[square+8]`) with
+**PeSTO** middlegame/endgame piece-square tables (PST component only; no
+PeSTO material duplicated — micro-Max still scores captures via `37×piece`).
+
+| Item | Detail |
+|---|---|
+| Source | Ronald Friederich **PeSTO** tables as published on the [Chess Programming Wiki](https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function) and mirrored in `tools/pesto_source.py` (Karls-Sun/pesto.py, MIT) |
+| Generator | `tools/gen_pesto_pst.py --pawn-unit 52` → `mcumax_pesto_tables.h` (`int8`, `round(cp×52/100)`) |
+| Storage | 6 piece types × 64 × 2 (MG+EG) ≈ 768 bytes `.rodata` |
+| Taper | `phase` 0–24 from non-pawn material (PeSTO `gamephaseInc`); `(mg×phase + eg×(24−phase))/24` |
+| Black | PeSTO `sq^56` via `mcumax_pesto_square_index` |
+| Increment | `pst(to)−pst(from)` on quiet plies; phase reduced when a captured piece is removed |
+| Castling | Rook PST delta on rook square (removed separate `+50` king-side bonus) |
+| Removed / avoided double-count | micro-Max pawn structure `9×…`, endgame pawn-push `non_pawn_material>>2`, king “freeze” `−20`, castling `+50` |
+| Kept | Promotion / passer terms (`647−type`, doubled-rank bonus) — material path, not PST |
+| FEN castling | PR #11 virginity / moved flags unchanged on this branch |
+
+Captured-piece PST is **not** refunded on captures (unchanged micro-Max
+eval quirk). Host tests: `tests/host/test_pst.c`, `MCUMAX_EXPOSE_EVAL`.

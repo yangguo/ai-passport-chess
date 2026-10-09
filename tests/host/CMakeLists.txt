@@ -60,6 +60,17 @@ target_include_directories(test_ai_worker PRIVATE ${AI_INCLUDES})
 chess_ai_target_hash_bits(test_ai_worker 12)
 add_test(NAME ai_worker COMMAND test_ai_worker)
 
+add_executable(test_pst
+  test_pst.c
+  ${CORE_SOURCES}
+  ${ENGINE_DIR}/mcu-max.c
+  ${ENGINE_DIR}/mcumax_hash_scramble_table.c
+)
+target_include_directories(test_pst PRIVATE ${CORE_DIR}/include ${ENGINE_DIR})
+target_compile_definitions(test_pst PRIVATE MCUMAX_EXPOSE_EVAL)
+chess_ai_target_hash_bits(test_pst 12)
+add_test(NAME pst COMMAND test_pst)
+
 add_executable(test_opening_book
   test_opening_book.c
   ${CORE_SOURCES}
@@ -69,6 +80,7 @@ add_executable(test_opening_book
 target_include_directories(test_opening_book PRIVATE ${AI_INCLUDES})
 chess_ai_target_hash_bits(test_opening_book 12)
 add_test(NAME opening_book COMMAND test_opening_book)
+set_tests_properties(opening_book PROPERTIES TIMEOUT 600)
 
 add_executable(test_mcumax_hash
   test_mcumax_hash.c
