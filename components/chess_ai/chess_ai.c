@@ -8,6 +8,81 @@
 #include "chess_core.h"
 #include "opening_book.h"
 
+#include <stdlib.h>
+
+#ifdef ESP_PLATFORM
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#endif
+
+#define CHESS_AI_TT_MIN_FREE_HEAP (32u * 1024u)
+#define CHESS_AI_TT_MIN_LARGEST_BLOCK_AFTER (16u * 1024u)
+#define CHESS_AI_TT_BLOCK_HEADROOM_PERCENT 25u
+
+static bool s_engine_init_done;
+
+static void ensure_engine_init(void) {
+    if (!s_engine_init_done) {
+        chess_ai_engine_init();
+    }
+}
+
+void chess_ai_engine_init(void) {
+    if (s_engine_init_done) {
+        return;
+    }
+    s_engine_init_done = true;
+#if !defined(MCUMAX_HASH_BITS) || MCUMAX_HASH_BITS > 0
+    size_t need = mcumax_hash_table_bytes();
+    if (need == 0) {
+        return;
+    }
+#ifdef ESP_PLATFORM
+    {
+        size_t largest =
+            (size_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                     MALLOC_CAP_8BIT);
+        size_t need_with_headroom =
+            need + (need * CHESS_AI_TT_BLOCK_HEADROOM_PERCENT) / 100u;
+        if (largest < need_with_headroom) {
+            ESP_LOGW("chess_ai",
+                     "TT skip: need %u+%u%% block, largest block %u",
+                     (unsigned)need, (unsigned)CHESS_AI_TT_BLOCK_HEADROOM_PERCENT,
+                     (unsigned)largest);
+            return;
+        }
+    }
+#endif
+    if (!mcumax_hash_alloc()) {
+#ifdef ESP_PLATFORM
+        ESP_LOGW("chess_ai", "TT alloc failed (%u bytes)", (unsigned)need);
+#else
+        (void)need;
+#endif
+        return;
+    }
+#ifdef ESP_PLATFORM
+    {
+        size_t free_after =
+            (size_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        size_t largest_after =
+            (size_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                     MALLOC_CAP_8BIT);
+        if (free_after < CHESS_AI_TT_MIN_FREE_HEAP ||
+            largest_after < CHESS_AI_TT_MIN_LARGEST_BLOCK_AFTER) {
+            ESP_LOGW("chess_ai",
+                     "TT disabled: free %u largest %u after %u-byte table "
+                     "(min free %u, min largest %u)",
+                     (unsigned)free_after, (unsigned)largest_after,
+                     (unsigned)need, (unsigned)CHESS_AI_TT_MIN_FREE_HEAP,
+                     (unsigned)CHESS_AI_TT_MIN_LARGEST_BLOCK_AFTER);
+            mcumax_hash_shutdown();
+        }
+    }
+#endif
+#endif
+}
+
 void chess_ai_level_budgets(chess_ai_level level, uint32_t *deadline_ms,
                             uint32_t *node_max, unsigned *depth_max) {
     if (deadline_ms == NULL || node_max == NULL || depth_max == NULL) {
@@ -35,6 +110,7 @@ void chess_ai_level_budgets(chess_ai_level level, uint32_t *deadline_ms,
 
 int chess_ai_suggest(const chess_position *pos, uint32_t node_max,
                      unsigned depth_max, chess_move *out) {
+    ensure_engine_init();
     char fen[CHESS_FEN_MAX];
     mcumax_move reply;
     chess_move m;
@@ -51,9 +127,6 @@ int chess_ai_suggest(const chess_position *pos, uint32_t node_max,
     if (chess_position_to_fen(pos, fen, sizeof(fen)) != CHESS_OK) {
         return -1;
     }
-    /* mcumax_set_fen_position resets the global engine state first,
-     * so consecutive calls never leak history. No callback installed:
-     * the search always ends on the node/depth budget. */
     mcumax_set_fen_position(fen);
     reply = mcumax_search_best_move(node_max, depth_max);
     if (reply.from == MCUMAX_SQUARE_INVALID ||
@@ -128,6 +201,7 @@ static bool collect_legal(const chess_position *pos, chess_move *out,
 }
 
 void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
+    ensure_engine_init();
     chess_move legal[CHESS_MAX_MOVES];
     size_t count = 0;
     char fen[CHESS_FEN_MAX];

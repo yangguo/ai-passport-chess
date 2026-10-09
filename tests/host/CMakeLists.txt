@@ -32,8 +32,13 @@ set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mcu-max)
 set_source_files_properties(${ENGINE_DIR}/mcu-max.c PROPERTIES
   COMPILE_OPTIONS "-Wno-error")
 
-set(AI_SOURCES ${AI_DIR}/chess_ai.c ${AI_DIR}/opening_book.c ${ENGINE_DIR}/mcu-max.c)
+set(AI_SOURCES ${AI_DIR}/chess_ai.c ${AI_DIR}/opening_book.c ${ENGINE_DIR}/mcu-max.c
+  ${ENGINE_DIR}/mcumax_hash_scramble_table.c)
 set(AI_INCLUDES ${CORE_DIR}/include ${AI_DIR}/include ${AI_DIR} ${ENGINE_DIR})
+
+function(chess_ai_target_hash_bits target bits)
+  target_compile_definitions(${target} PRIVATE MCUMAX_HASH_BITS=${bits})
+endfunction()
 
 add_executable(test_ai_adapter
   test_ai_adapter.c
@@ -42,6 +47,7 @@ add_executable(test_ai_adapter
   ${AI_SOURCES}
 )
 target_include_directories(test_ai_adapter PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_ai_adapter 12)
 add_test(NAME ai_adapter COMMAND test_ai_adapter)
 
 add_executable(test_ai_worker
@@ -51,6 +57,7 @@ add_executable(test_ai_worker
   ${AI_SOURCES}
 )
 target_include_directories(test_ai_worker PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_ai_worker 12)
 add_test(NAME ai_worker COMMAND test_ai_worker)
 
 add_executable(test_opening_book
@@ -60,7 +67,38 @@ add_executable(test_opening_book
   ${AI_SOURCES}
 )
 target_include_directories(test_opening_book PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_opening_book 12)
 add_test(NAME opening_book COMMAND test_opening_book)
+
+add_executable(test_mcumax_hash
+  test_mcumax_hash.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_SOURCES}
+)
+target_include_directories(test_mcumax_hash PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_mcumax_hash 12)
+add_test(NAME mcumax_hash COMMAND test_mcumax_hash)
+
+add_executable(test_mcumax_hash_off
+  test_mcumax_hash.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_SOURCES}
+)
+target_include_directories(test_mcumax_hash_off PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_mcumax_hash_off 0)
+add_test(NAME mcumax_hash_off COMMAND test_mcumax_hash_off)
+
+add_executable(test_ai_fen_reload
+  test_ai_fen_reload.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_SOURCES}
+)
+target_include_directories(test_ai_fen_reload PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_ai_fen_reload 12)
+add_test(NAME ai_fen_reload COMMAND test_ai_fen_reload)
 add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
   ${MODEL_DIR}/chess_ui_model.c)
 target_include_directories(test_ui_model PRIVATE
@@ -126,6 +164,7 @@ target_include_directories(test_app PRIVATE app_stubs
   ${POWER_DIR}/include
   ${MODEL_DIR}/include ${I18N_DIR}/include ${STORAGE_DIR}/include
   ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_app 12)
 add_test(NAME app COMMAND test_app)
 
 add_executable(test_board_layout test_board_layout.c)

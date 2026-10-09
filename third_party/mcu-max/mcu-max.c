@@ -16,8 +16,17 @@
 
 #include "mcu-max.h"
 
-// Configuration
-// #define MCUMAX_HASHING_ENABLED
+/* Transposition table size: 2^MCUMAX_HASH_BITS entries (0 = disabled). */
+#ifndef MCUMAX_HASH_BITS
+#define MCUMAX_HASH_BITS 0
+#endif
+
+#if MCUMAX_HASH_BITS > 0
+#define MCUMAX_HASHING_ENABLED 1
+#define MCUMAX_HASH_TABLE_SIZE (1u << (MCUMAX_HASH_BITS))
+#else
+#define MCUMAX_HASH_TABLE_SIZE 1u
+#endif
 
 // Constants
 #define MCUMAX_BOARD_MASK 0x88
@@ -100,20 +109,125 @@ static const int8_t mcumax_board_setup[] = {
     MCUMAX_ROOK,
 };
 
-#ifdef MCUMAX_HASHING_ENABLED
+static uint8_t mcumax_start_board[sizeof(mcumax.board)];
+static bool mcumax_start_board_ready;
+
+#define MCUMAX_CASTLE_WK 0x01u
+#define MCUMAX_CASTLE_WQ 0x02u
+#define MCUMAX_CASTLE_BK 0x04u
+#define MCUMAX_CASTLE_BQ 0x08u
+
+static void mcumax_apply_moved_flags_from_layout(void)
+{
+    for (uint8_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        uint8_t piece = mcumax.board[square];
+        uint8_t start = mcumax_start_board[square];
+
+        if (!piece)
+            continue;
+
+        if (piece != start)
+            mcumax.board[square] = piece | MCUMAX_PIECE_MOVED;
+        else
+            mcumax.board[square] = piece & (uint8_t)~MCUMAX_PIECE_MOVED;
+    }
+}
+
+static void mcumax_mark_square_moved(uint8_t square)
+{
+    if (mcumax.board[square])
+        mcumax.board[square] |= MCUMAX_PIECE_MOVED;
+}
+
+static void mcumax_clear_square_moved(uint8_t square)
+{
+    if (mcumax.board[square])
+        mcumax.board[square] &= (uint8_t)~MCUMAX_PIECE_MOVED;
+}
+
+static bool mcumax_square_is_king(uint8_t square, uint8_t color)
+{
+    uint8_t piece = mcumax.board[square] & (uint8_t)~MCUMAX_PIECE_MOVED;
+
+    return piece == (MCUMAX_KING | color);
+}
+
+static bool mcumax_square_is_rook(uint8_t square, uint8_t color)
+{
+    uint8_t piece = mcumax.board[square] & (uint8_t)~MCUMAX_PIECE_MOVED;
+
+    return piece == (MCUMAX_ROOK | color);
+}
+
+/* FEN castling field: home K/R are virgin only when that side's right is set. */
+static void mcumax_apply_castling_rights(uint8_t rights)
+{
+    if (mcumax_square_is_king(0x74, MCUMAX_BOARD_WHITE))
+    {
+        if ((rights & (MCUMAX_CASTLE_WK | MCUMAX_CASTLE_WQ)) != 0)
+            mcumax_clear_square_moved(0x74);
+        else
+            mcumax_mark_square_moved(0x74);
+    }
+
+    if (mcumax_square_is_rook(0x77, MCUMAX_BOARD_WHITE))
+    {
+        if (rights & MCUMAX_CASTLE_WK)
+            mcumax_clear_square_moved(0x77);
+        else
+            mcumax_mark_square_moved(0x77);
+    }
+
+    if (mcumax_square_is_rook(0x70, MCUMAX_BOARD_WHITE))
+    {
+        if (rights & MCUMAX_CASTLE_WQ)
+            mcumax_clear_square_moved(0x70);
+        else
+            mcumax_mark_square_moved(0x70);
+    }
+
+    if (mcumax_square_is_king(0x04, MCUMAX_BOARD_BLACK))
+    {
+        if ((rights & (MCUMAX_CASTLE_BK | MCUMAX_CASTLE_BQ)) != 0)
+            mcumax_clear_square_moved(0x04);
+        else
+            mcumax_mark_square_moved(0x04);
+    }
+
+    if (mcumax_square_is_rook(0x07, MCUMAX_BOARD_BLACK))
+    {
+        if (rights & MCUMAX_CASTLE_BK)
+            mcumax_clear_square_moved(0x07);
+        else
+            mcumax_mark_square_moved(0x07);
+    }
+
+    if (mcumax_square_is_rook(0x00, MCUMAX_BOARD_BLACK))
+    {
+        if (rights & MCUMAX_CASTLE_BQ)
+            mcumax_clear_square_moved(0x00);
+        else
+            mcumax_mark_square_moved(0x00);
+    }
+}
+
+#if MCUMAX_HASH_BITS > 0
 
 #define MCUMAX_HASH_SCRAMBLE_TABLE_SIZE 1035
-#define MCUMAX_HASH_TABLE_SIZE (1 << 24)
 
-#define HashScramble(A, B)                \
-    *(uint32_t *)(mcumax_scramble_table + \
+extern const uint8_t mcumax_hash_scramble_table[MCUMAX_HASH_SCRAMBLE_TABLE_SIZE];
+
+#define HashScramble(A, B)                      \
+    *(uint32_t *)(mcumax_hash_scramble_table + \
                   A + (B & 8) + MCUMAX_SQUARE_INVALID * (B & 0b111))
-#define Hash(A)                                                      \
-    HashScramble(step_square_to + A, mcumax.board[step_square_to]) - \
-        HashScramble(scan_square_from + A, scan_piece) -             \
+#define Hash(A)                                                  \
+    HashScramble(square_to + A, mcumax.board[square_to]) -       \
+        HashScramble(square_from + A, scan_piece) -             \
         HashScramble(capture_square + A, capture_piece)
-
-static uint8_t mcumax_scramble_table[MCUMAX_HASH_SCRAMBLE_TABLE_SIZE]; /* hash translation table */
 
 struct HashEntry
 {
@@ -124,7 +238,40 @@ struct HashEntry
     uint8_t depth;
 };
 
-static struct HashEntry mcumax_hash_table[MCUMAX_HASH_TABLE_SIZE];
+_Static_assert(sizeof(struct HashEntry) == 12, "HashEntry layout must match micro-Max");
+
+static struct HashEntry *mcumax_hash_table;
+static bool mcumax_hash_table_owned;
+
+static struct mcumax_hash_stats mcumax_hash_stats;
+
+static void mcumax_hash_sync_after_fen(void)
+{
+    bool at_start = true;
+
+    for (uint8_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+        if (mcumax.board[square] != mcumax_start_board[square])
+        {
+            at_start = false;
+            break;
+        }
+    }
+
+    if (at_start && mcumax.current_side == MCUMAX_BOARD_WHITE &&
+        mcumax.en_passant_square == MCUMAX_SQUARE_INVALID)
+    {
+        mcumax.hash_key = 0;
+        mcumax.hash_key2 = 0;
+        return;
+    }
+
+    /* FEN reload clears the table in mcumax_init(); keys restart at zero. */
+    mcumax.hash_key = 0;
+    mcumax.hash_key2 = 0;
+}
 
 #endif
 
@@ -191,32 +338,58 @@ static int32_t mcumax_search(int32_t alpha,
     beta -= beta <= score;
 
 #ifdef MCUMAX_HASHING_ENABLED
-    // Lookup pos. in hash table
-    struct HashEntry *hash_entry = mcumax_hash_table +
-                                   ((mcumax.hash_key +
-                                     mcumax.current_side * en_passant_square) &
-                                    MCUMAX_HASH_TABLE_SIZE - 1);
+    struct HashEntry *hash_entry = NULL;
 
-    iter_depth = hash_entry->depth;
-    iter_score = hash_entry->score;
-    iter_square_from = hash_entry->square_from;
-    iter_square_to = hash_entry->square_to;
-
-    // Resume at stored depth
-    if ((hash_entry->key2 != mcumax.hash_key2) ||
-        (mode != MCUMAX_INTERNAL_NODE) || // Miss: other pos. or empty
-        !(((iter_score <= alpha) ||
-           (iter_square_from & 0x8)) &&
-          ((iter_score >= beta) ||
-           (iter_square_from & MCUMAX_SQUARE_INVALID)))) // Or window incompatible
+    if (mcumax_hash_table)
     {
-        // Start iteration from scratch
-        iter_depth =
-            iter_square_to = 0;
-    }
+        bool tt_cutoff = false;
 
-    // Start at best-move hint
-    iter_square_from &= ~MCUMAX_BOARD_MASK;
+        // Lookup pos. in hash table
+        hash_entry = mcumax_hash_table +
+                     ((mcumax.hash_key +
+                       mcumax.current_side * en_passant_square) &
+                      (MCUMAX_HASH_TABLE_SIZE - 1));
+
+        mcumax_hash_stats.probes++;
+
+        iter_depth = hash_entry->depth;
+        iter_score = hash_entry->score;
+        iter_square_from = hash_entry->square_from;
+        iter_square_to = hash_entry->square_to;
+
+        if (hash_entry->key2 == mcumax.hash_key2)
+            mcumax_hash_stats.key_hits++;
+
+        // Resume at stored depth
+        if ((hash_entry->key2 != mcumax.hash_key2) ||
+            (mode != MCUMAX_INTERNAL_NODE) || // Miss: other pos. or empty
+            !(((iter_score <= alpha) ||
+               (iter_square_from & 0x8)) &&
+              ((iter_score >= beta) ||
+               (iter_square_from & MCUMAX_SQUARE_INVALID)))) // Or window incompatible
+        {
+            // Start iteration from scratch
+            iter_depth =
+                iter_square_to = 0;
+        }
+        else
+        {
+            tt_cutoff = true;
+            mcumax_hash_stats.cutoffs++;
+        }
+
+        // Start at best-move hint
+        iter_square_from &= ~MCUMAX_BOARD_MASK;
+
+        (void)tt_cutoff;
+    }
+    else
+    {
+        iter_depth =
+            iter_score =
+                iter_square_from =
+                    iter_square_to = 0;
+    }
 
     hash_key = mcumax.hash_key;
     hash_key2 = mcumax.hash_key2;
@@ -478,8 +651,11 @@ static int32_t mcumax_search(int32_t alpha,
 
 #ifdef MCUMAX_HASHING_ENABLED
                                 // Lock game in hash as draw
-                                hash_entry->depth = MCUMAX_DEPTH_MAX;
-                                hash_entry->score = 0;
+                                if (hash_entry)
+                                {
+                                    hash_entry->depth = MCUMAX_DEPTH_MAX;
+                                    hash_entry->score = 0;
+                                }
 #endif
 
                                 // Total captured material
@@ -594,8 +770,14 @@ static int32_t mcumax_search(int32_t alpha,
 
 #ifdef MCUMAX_HASHING_ENABLED
         // Protect game history
-        if (hash_entry->depth < MCUMAX_DEPTH_MAX)
+        if (hash_entry && hash_entry->depth < MCUMAX_DEPTH_MAX)
         {
+            if (hash_entry->key2 == mcumax.hash_key2 &&
+                hash_entry->depth > iter_depth &&
+                hash_entry->depth < MCUMAX_DEPTH_MAX)
+                mcumax_hash_stats.replace_deeper_lost++;
+
+            mcumax_hash_stats.stores++;
             hash_entry->key2 = mcumax.hash_key2;
             hash_entry->score = iter_score;
             hash_entry->depth = iter_depth;
@@ -642,6 +824,12 @@ void mcumax_init()
         for (uint32_t y = 0; y < 8; y++)
             mcumax.board[16 * y + x + 8] = (x - 4) * (x - 4) + (y - 4) * (y - 3);
     }
+
+    if (!mcumax_start_board_ready)
+    {
+        memcpy(mcumax_start_board, mcumax.board, sizeof(mcumax_start_board));
+        mcumax_start_board_ready = true;
+    }
     mcumax.current_side = MCUMAX_BOARD_WHITE;
 
     mcumax.score = 0;
@@ -661,19 +849,7 @@ void mcumax_init()
 #ifdef MCUMAX_HASHING_ENABLED
     mcumax.hash_key = 0;
     mcumax.hash_key2 = 0;
-
-    memset(mcumax_hash_table, 0, sizeof(mcumax_hash_table));
-
-    // for (uint32_t i = MCUMAX_HASH_SCRAMBLE_TABLE_SIZE - 1; i > MCUMAX_BOARD_MASK; i--)
-    //     mcumax_scramble_table[i] = rand() & 0xff;
-
-    srand(1);
-    for (uint32_t i = 0; i < 1035; i++)
-        mcumax_scramble_table[i] =
-            ((rand() & 0xff) << 0) |
-            ((rand() & 0xff) << 8) |
-            ((rand() & 0xff) << 16) |
-            ((rand() & 0xff) << 24);
+    mcumax_hash_clear();
 #endif
 }
 
@@ -682,7 +858,9 @@ static mcumax_square mcumax_set_piece(mcumax_square square, mcumax_piece piece)
     if (square & MCUMAX_BOARD_MASK)
         return square;
 
-    mcumax.board[square] = piece ? (piece | MCUMAX_PIECE_MOVED) : piece;
+    /* Do not set MCUMAX_PIECE_MOVED here: virginity comes from init layout,
+     * castling-field parsing, and move execution (matches incremental hash). */
+    mcumax.board[square] = piece;
 
     return square + 1;
 }
@@ -695,12 +873,21 @@ mcumax_piece mcumax_get_piece(mcumax_square square)
     return (mcumax.board[square] & 0xf) ^ MCUMAX_BLACK;
 }
 
+uint8_t mcumax_get_board_byte(mcumax_square square)
+{
+    if (square & MCUMAX_BOARD_MASK)
+        return MCUMAX_EMPTY;
+
+    return mcumax.board[square];
+}
+
 void mcumax_set_fen_position(const char *fen_string)
 {
     mcumax_init();
 
     uint32_t field_index = 0;
     uint32_t board_index = 0;
+    uint8_t castle_rights = 0;
 
     char c;
     while ((c = *fen_string++))
@@ -820,27 +1007,23 @@ void mcumax_set_fen_position(const char *fen_string)
             switch (c)
             {
             case 'K':
-                mcumax.board[0x74] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x77] &= ~MCUMAX_PIECE_MOVED;
-
+                castle_rights |= MCUMAX_CASTLE_WK;
                 break;
 
             case 'Q':
-                mcumax.board[0x74] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x70] &= ~MCUMAX_PIECE_MOVED;
-
+                castle_rights |= MCUMAX_CASTLE_WQ;
                 break;
 
             case 'k':
-                mcumax.board[0x04] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x07] &= ~MCUMAX_PIECE_MOVED;
-
+                castle_rights |= MCUMAX_CASTLE_BK;
                 break;
 
             case 'q':
-                mcumax.board[0x04] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x00] &= ~MCUMAX_PIECE_MOVED;
+                castle_rights |= MCUMAX_CASTLE_BQ;
+                break;
 
+            case '-':
+                castle_rights = 0;
                 break;
             }
 
@@ -879,6 +1062,13 @@ void mcumax_set_fen_position(const char *fen_string)
             break;
         }
     }
+
+    mcumax_apply_moved_flags_from_layout();
+    mcumax_apply_castling_rights(castle_rights);
+
+#ifdef MCUMAX_HASHING_ENABLED
+    mcumax_hash_sync_after_fen();
+#endif
 }
 
 mcumax_piece mcumax_get_current_side(void)
@@ -900,6 +1090,10 @@ static int32_t mcumax_start_search(enum mcumax_mode mode,
 
     mcumax.stop_search = false;
     mcumax.completed_move = MCUMAX_MOVE_INVALID;
+
+#ifdef MCUMAX_HASHING_ENABLED
+    mcumax_hash_reset_stats();
+#endif
 
     return mcumax_search(-MCUMAX_SCORE_MAX,
                          MCUMAX_SCORE_MAX,
@@ -935,7 +1129,8 @@ mcumax_move mcumax_search_best_move(uint32_t node_max, uint32_t depth_max)
 
 bool mcumax_play_move(mcumax_move move)
 {
-    return mcumax_start_search(MCUMAX_PLAY_MOVE, move, 0, 0) == MCUMAX_SCORE_MAX;
+    return mcumax_start_search(MCUMAX_PLAY_MOVE, move, MCUMAX_DEPTH_MAX,
+                               UINT32_MAX) == MCUMAX_SCORE_MAX;
 }
 
 void mcumax_set_callback(mcumax_callback callback, void *userdata)
@@ -948,3 +1143,78 @@ void mcumax_stop_search(void)
 {
     mcumax.stop_search = true;
 }
+
+uint32_t mcumax_get_last_search_nodes(void)
+{
+    return mcumax.node_count;
+}
+
+#if MCUMAX_HASH_BITS > 0
+
+void mcumax_hash_get_keys(uint32_t *key, uint32_t *key2)
+{
+    if (key != NULL)
+        *key = mcumax.hash_key;
+    if (key2 != NULL)
+        *key2 = mcumax.hash_key2;
+}
+
+void mcumax_hash_reset_stats(void)
+{
+    memset(&mcumax_hash_stats, 0, sizeof(mcumax_hash_stats));
+}
+
+void mcumax_hash_get_stats(struct mcumax_hash_stats *out)
+{
+    if (out != NULL)
+        *out = mcumax_hash_stats;
+}
+
+size_t mcumax_hash_table_bytes(void)
+{
+    return (size_t)MCUMAX_HASH_TABLE_SIZE * sizeof(struct HashEntry);
+}
+
+bool mcumax_hash_is_active(void)
+{
+    return mcumax_hash_table != NULL;
+}
+
+void mcumax_hash_clear(void)
+{
+    if (mcumax_hash_table)
+        memset(mcumax_hash_table, 0,
+               (size_t)MCUMAX_HASH_TABLE_SIZE * sizeof(struct HashEntry));
+}
+
+bool mcumax_hash_bind(void *table, bool owned)
+{
+    if (mcumax_hash_table_owned && mcumax_hash_table)
+        free(mcumax_hash_table);
+    mcumax_hash_table = (struct HashEntry *)table;
+    mcumax_hash_table_owned = owned && (table != NULL);
+    if (table)
+        mcumax_hash_clear();
+    return table != NULL;
+}
+
+bool mcumax_hash_alloc(void)
+{
+    if (mcumax_hash_table)
+        return true;
+    struct HashEntry *table =
+        (struct HashEntry *)malloc(mcumax_hash_table_bytes());
+    if (!table)
+        return false;
+    return mcumax_hash_bind(table, true);
+}
+
+void mcumax_hash_shutdown(void)
+{
+    if (mcumax_hash_table_owned && mcumax_hash_table)
+        free(mcumax_hash_table);
+    mcumax_hash_table = NULL;
+    mcumax_hash_table_owned = false;
+}
+
+#endif

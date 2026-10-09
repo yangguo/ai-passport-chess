@@ -209,11 +209,38 @@ def main():
               % (args.skill, anchor))
     if rate <= 0.0 or rate >= 1.0:
         print("elo diff: out of range (all wins or all losses)")
+        print("score rate %.3f over %d games (95%% CI: n/a)" % (rate, played))
     else:
         diff = -400.0 * math.log10(1.0 / rate - 1.0)
+        # Wilson interval for binomial score rate (wins + 0.5 draws) / games.
+        wins = score
+        z = 1.959963984540054
+        n = float(played)
+        p = wins / n
+        denom = 1.0 + z * z / n
+        center = (p + z * z / (2.0 * n)) / denom
+        margin = (
+            z
+            * math.sqrt((p * (1.0 - p) + z * z / (4.0 * n)) / n)
+            / denom
+        )
+        lo = max(0.0, center - margin)
+        hi = min(1.0, center + margin)
+        if lo <= 0.0 or hi >= 1.0:
+            elo_lo = elo_hi = None
+        else:
+            elo_lo = -400.0 * math.log10(1.0 / hi - 1.0)
+            elo_hi = -400.0 * math.log10(1.0 / lo - 1.0)
         print("elo diff vs opponent: %+.0f" % diff)
+        if elo_lo is not None:
+            print(
+                "95%% CI (score rate %.3f, Elo diff): [%+.0f, %+.0f]"
+                % (rate, elo_lo, elo_hi)
+            )
+        else:
+            print("95%% CI (score rate): [%.3f, %.3f]" % (lo, hi))
         if anchor is not None:
-            print("implied ours: ~%.0f Elo (+- wide bars)" % (anchor + diff))
+            print("implied ours: ~%.0f Elo (anchor %+.0f)" % (anchor + diff, diff))
     return 0
 
 

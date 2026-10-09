@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define MCUMAX_ID "mcu-max 1.0.6"
@@ -78,6 +79,9 @@ void mcumax_set_fen_position(const char *value);
  */
 mcumax_piece mcumax_get_piece(mcumax_square square);
 
+/** Raw board square byte (includes color / moved flags); test/diagnostics. */
+uint8_t mcumax_get_board_byte(mcumax_square square);
+
 /**
  * @brief Returns the current side.
  */
@@ -120,6 +124,33 @@ void mcumax_set_callback(mcumax_callback callback, void *userdata);
  * @brief Stops the current search. To be called from the user callback.
  */
 void mcumax_stop_search(void);
+
+#if !defined(MCUMAX_HASH_BITS) || MCUMAX_HASH_BITS > 0
+/** Bytes needed for the compile-time transposition table (0 when disabled). */
+size_t mcumax_hash_table_bytes(void);
+bool mcumax_hash_is_active(void);
+void mcumax_hash_clear(void);
+/** Take ownership of a caller-allocated table (memset on bind). */
+bool mcumax_hash_bind(void *table, bool owned);
+bool mcumax_hash_alloc(void);
+void mcumax_hash_shutdown(void);
+/** Piece-only Zobrist keys for the current board (testing/diagnostics). */
+void mcumax_hash_get_keys(uint32_t *key, uint32_t *key2);
+
+struct mcumax_hash_stats {
+    uint64_t probes;
+    uint64_t key_hits;
+    uint64_t cutoffs;
+    uint64_t stores;
+    uint64_t replace_deeper_lost;
+};
+
+void mcumax_hash_reset_stats(void);
+void mcumax_hash_get_stats(struct mcumax_hash_stats *out);
+#endif
+
+/** Nodes consumed by the last search (reset at search start). */
+uint32_t mcumax_get_last_search_nodes(void);
 
 #ifdef __cplusplus
 }
