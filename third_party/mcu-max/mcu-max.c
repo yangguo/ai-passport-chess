@@ -64,6 +64,9 @@ struct
     // Local patch: only a fully completed root iteration may survive stop.
     mcumax_move completed_move;
 
+    uint32_t last_search_nodes;
+    uint32_t last_search_iter_depth;
+
     // Extra
     mcumax_callback user_callback;
     void *user_data;
@@ -99,6 +102,144 @@ static const int8_t mcumax_board_setup[] = {
     MCUMAX_KNIGHT,
     MCUMAX_ROOK,
 };
+
+/* PeSTO MG/EG PST (scaled int8); see mcumax_pesto_tables.h and SOURCES.md. */
+#include "mcumax_pesto_tables.h"
+
+#define MCUMAX_PESTO_PHASE_MAX 24
+
+static uint8_t mcumax_pesto_plane(uint8_t scan_piece_type)
+{
+    if (scan_piece_type < 3)
+        return 0;
+    if (scan_piece_type == 3)
+        return 1;
+    if (scan_piece_type == 4)
+        return 5;
+    if (scan_piece_type == 5)
+        return 2;
+    if (scan_piece_type == 6)
+        return 3;
+    return 4;
+}
+
+static uint8_t mcumax_pesto_phase_inc(uint8_t scan_piece_type)
+{
+    if (scan_piece_type == 3 || scan_piece_type == 5)
+        return 1;
+    if (scan_piece_type == 6)
+        return 2;
+    if (scan_piece_type == 7)
+        return 4;
+    return 0;
+}
+
+static uint8_t mcumax_pesto_square_index(mcumax_square square, uint8_t scan_piece)
+{
+    uint8_t file = square & 7;
+    uint8_t rank = square >> 4;
+    uint8_t idx = ((7 - rank) << 3) | file;
+
+    if (scan_piece & MCUMAX_BOARD_BLACK)
+        idx ^= 56;
+
+    return idx;
+}
+
+static int32_t mcumax_pesto_interp(const int8_t *mg_plane,
+                                   const int8_t *eg_plane,
+                                   uint8_t pesto_phase,
+                                   uint8_t sq_index)
+{
+    int32_t mg = mg_plane[sq_index];
+    int32_t eg = eg_plane[sq_index];
+    int32_t eg_phase = MCUMAX_PESTO_PHASE_MAX - pesto_phase;
+
+    return (mg * pesto_phase + eg * eg_phase) / MCUMAX_PESTO_PHASE_MAX;
+}
+
+static uint8_t mcumax_pesto_phase(void)
+{
+    uint8_t phase = 0;
+
+    for (uint32_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        uint8_t scan_piece_type = mcumax.board[square] & 0b111;
+        if (!scan_piece_type)
+            continue;
+
+        phase += mcumax_pesto_phase_inc(scan_piece_type);
+    }
+
+    if (phase > MCUMAX_PESTO_PHASE_MAX)
+        phase = MCUMAX_PESTO_PHASE_MAX;
+
+    return phase;
+}
+
+static int32_t mcumax_pst_lookup(uint8_t scan_piece,
+                                 mcumax_square square,
+                                 uint8_t pesto_phase)
+{
+    uint8_t scan_piece_type = scan_piece & 0b111;
+    uint8_t plane;
+    uint8_t sq_index;
+
+    if (!scan_piece_type)
+        return 0;
+
+    plane = mcumax_pesto_plane(scan_piece_type);
+    sq_index = mcumax_pesto_square_index(square & 0x77, scan_piece);
+
+    return mcumax_pesto_interp(mcumax_pesto_mg_planes[plane],
+                               mcumax_pesto_eg_planes[plane],
+                               pesto_phase,
+                               sq_index);
+}
+
+#ifdef MCUMAX_EXPOSE_EVAL
+static int32_t mcumax_pst_side_sum(mcumax_piece side)
+{
+    int32_t sum = 0;
+
+    for (uint32_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        mcumax_piece piece = mcumax.board[square];
+        if (!(piece & side) || !(piece & 0b111))
+            continue;
+
+        sum += mcumax_pst_lookup(piece, (mcumax_square)square, mcumax_pesto_phase());
+    }
+
+    return sum;
+}
+
+int32_t mcumax_eval_pst_score(void)
+{
+    int32_t white = mcumax_pst_side_sum(MCUMAX_BOARD_WHITE);
+    int32_t black = mcumax_pst_side_sum(MCUMAX_BOARD_BLACK);
+
+    if (mcumax.current_side == MCUMAX_BOARD_WHITE)
+        return white - black;
+    return black - white;
+}
+
+int32_t mcumax_eval_pst_from_scratch(void)
+{
+    int32_t white = mcumax_pst_side_sum(MCUMAX_BOARD_WHITE);
+    int32_t black = mcumax_pst_side_sum(MCUMAX_BOARD_BLACK);
+
+    if (mcumax.current_side == MCUMAX_BOARD_WHITE)
+        return white - black;
+    return black - white;
+}
+#endif
 
 #ifdef MCUMAX_HASHING_ENABLED
 
@@ -364,10 +505,25 @@ static int32_t mcumax_search(int32_t alpha,
                         // All captures if depth == 2
                         if ((iter_depth - !capture_piece) > 1)
                         {
-                            // Center positional score
-                            step_score = (scan_piece_type < 6)
-                                             ? mcumax.board[square_from + 0x8] -
-                                                   mcumax.board[square_to + 0x8]
+                            uint8_t pesto_phase = mcumax_pesto_phase();
+                            uint8_t capture_type = capture_piece & 0b111;
+
+                            if (capture_type)
+                            {
+                                uint8_t dec = mcumax_pesto_phase_inc(capture_type);
+
+                                pesto_phase =
+                                    pesto_phase > dec ? pesto_phase - dec : 0;
+                            }
+
+                            // PeSTO tapered PST (quiet material already in micro-Max)
+                            step_score = scan_piece_type
+                                             ? (mcumax_pst_lookup(scan_piece,
+                                                                  square_to,
+                                                                  pesto_phase) -
+                                                mcumax_pst_lookup(scan_piece,
+                                                                  square_from,
+                                                                  pesto_phase))
                                              : 0;
 
                             mcumax.board[castling_rook_square] =
@@ -377,42 +533,30 @@ static int32_t mcumax_search(int32_t alpha,
                             // Do move, set non-virgin
                             mcumax.board[square_to] = scan_piece | MCUMAX_PIECE_MOVED;
 
-                            // Castling: put rook & score
+                            // Castling: rook PST (king PST on king square above)
                             if (!(castling_rook_square & MCUMAX_BOARD_MASK))
                             {
-                                mcumax.board[castling_skip_square] = mcumax.current_side + 6;
-                                step_score += 50;
+                                uint8_t rook_piece = mcumax.current_side + 6;
+
+                                mcumax.board[castling_skip_square] = rook_piece;
+                                step_score +=
+                                    mcumax_pst_lookup(rook_piece,
+                                                      castling_skip_square,
+                                                      pesto_phase) -
+                                    mcumax_pst_lookup(rook_piece,
+                                                      castling_rook_square,
+                                                      pesto_phase);
                             }
 
-                            // Freeze king in mid-game
-                            step_score -= ((scan_piece_type != 4) ||
-                                           (mcumax.non_pawn_material > 30))
-                                              ? 0
-                                              : 20;
-
-                            // Pawns
+                            // Pawns: keep promotion / passer only (PeSTO covers structure)
                             if (scan_piece_type < 3)
                             {
-                                step_score -=
-                                    9 * ((((square_from - 2) & MCUMAX_BOARD_MASK) ||
-                                          mcumax.board[square_from - 2] - scan_piece) +
-                                         // Structure, undefended
-                                         (((square_from + 2) & MCUMAX_BOARD_MASK) ||
-                                          mcumax.board[square_from + 2] - scan_piece) -
-                                         1 +
-                                         // Squares plus bias
-                                         (mcumax.board[square_from ^ 0x10] ==
-                                          (mcumax.current_side + 36))) // Cling to magnetic king
-                                    - (mcumax.non_pawn_material >> 2); // End-game Pawn-push bonus
-
-                                // Promotion / passer bonus
                                 capture_piece_value +=
                                     step_alpha =
                                         (square_to + step_vector + 1) & MCUMAX_SQUARE_INVALID
                                             ? (647 - scan_piece_type)
                                             : 2 * (scan_piece & (square_to + 0x10) & 0x20);
 
-                                // Upgrade pawn or convert to queen
                                 mcumax.board[square_to] += step_alpha;
                             }
 
@@ -585,6 +729,8 @@ static int32_t mcumax_search(int32_t alpha,
         {
             mcumax.completed_move = (mcumax_move){
                 iter_square_from, iter_square_to & ~MCUMAX_BOARD_MASK};
+            if (mode == MCUMAX_SEARCH_BEST_MOVE)
+                mcumax.last_search_iter_depth = iter_depth;
         }
 
         // Check test thru NM best loses king: (stale)mate
@@ -638,9 +784,9 @@ void mcumax_init()
         mcumax.board[0x10 * 6 + x] = MCUMAX_BOARD_WHITE | MCUMAX_PAWN_UPSTREAM;
         mcumax.board[0x10 * 7 + x] = MCUMAX_BOARD_WHITE | mcumax_board_setup[x];
 
-        // Setup weights (right side)
+        // Right half: keep 0x88 padding only (PST lives in flash).
         for (uint32_t y = 0; y < 8; y++)
-            mcumax.board[16 * y + x + 8] = (x - 4) * (x - 4) + (y - 4) * (y - 3);
+            mcumax.board[16 * y + x + 8] = 0;
     }
     mcumax.current_side = MCUMAX_BOARD_WHITE;
 
@@ -879,6 +1025,7 @@ void mcumax_set_fen_position(const char *fen_string)
             break;
         }
     }
+
 }
 
 mcumax_piece mcumax_get_current_side(void)
@@ -900,6 +1047,8 @@ static int32_t mcumax_start_search(enum mcumax_mode mode,
 
     mcumax.stop_search = false;
     mcumax.completed_move = MCUMAX_MOVE_INVALID;
+    mcumax.last_search_nodes = 0;
+    mcumax.last_search_iter_depth = 0;
 
     return mcumax_search(-MCUMAX_SCORE_MAX,
                          MCUMAX_SCORE_MAX,
@@ -925,6 +1074,8 @@ mcumax_move mcumax_search_best_move(uint32_t node_max, uint32_t depth_max)
     int32_t score = mcumax_start_search(MCUMAX_SEARCH_BEST_MOVE,
                                         MCUMAX_MOVE_INVALID, depth_max + 3, node_max);
 
+    mcumax.last_search_nodes = mcumax.node_count;
+
     if (mcumax.stop_search)
         return mcumax.completed_move;
     if (score == MCUMAX_SCORE_MAX)
@@ -947,4 +1098,12 @@ void mcumax_set_callback(mcumax_callback callback, void *userdata)
 void mcumax_stop_search(void)
 {
     mcumax.stop_search = true;
+}
+
+void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth)
+{
+    if (nodes != NULL)
+        *nodes = mcumax.last_search_nodes;
+    if (iter_depth != NULL)
+        *iter_depth = mcumax.last_search_iter_depth;
 }

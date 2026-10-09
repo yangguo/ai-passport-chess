@@ -61,6 +61,15 @@ add_executable(test_opening_book
 )
 target_include_directories(test_opening_book PRIVATE ${AI_INCLUDES})
 add_test(NAME opening_book COMMAND test_opening_book)
+
+add_executable(test_pst
+  test_pst.c
+  ${CORE_SOURCES}
+  ${ENGINE_DIR}/mcu-max.c
+)
+target_include_directories(test_pst PRIVATE ${CORE_DIR}/include ${ENGINE_DIR})
+target_compile_definitions(test_pst PRIVATE MCUMAX_EXPOSE_EVAL)
+add_test(NAME pst COMMAND test_pst)
 add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
   ${MODEL_DIR}/chess_ui_model.c)
 target_include_directories(test_ui_model PRIVATE

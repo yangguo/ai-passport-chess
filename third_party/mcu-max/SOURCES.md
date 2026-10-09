@@ -4,7 +4,7 @@
 
 - Upstream: https://github.com/Gissio/mcu-max
 - Pinned commit: `aa03caffce50729566b5db6965bf735c31f33eea`
-- Files: `mcu-max.h`, `LICENSE` unchanged; `mcu-max.c` includes the local
+- Files: `mcu-max.h`, `LICENSE` unchanged; `mcu-max.c` includes local
   completed-iteration deadline patch described below.
 - License: MIT, (c) 2022-2025 Gissio — full text in `LICENSE`, keep it
   on every import or firmware release build
@@ -77,3 +77,24 @@ No hash table, allocation, public engine API, or depth-limit change.
 Regression: real engine + deterministic clock at a deadline must retain
 Rxe4 against an exposed queen; expiration before a completed iteration
 still falls back, and user cancellation never plays a move.
+
+## Local patch 2026-10-09: PeSTO tapered PST (engine-strength M2)
+
+Replaced the shared incremental centre weights (`board[square+8]`) with
+**PeSTO** middlegame/endgame piece-square tables (PST component only; no
+PeSTO material duplicated — micro-Max still scores captures via `37×piece`).
+
+| Item | Detail |
+|---|---|
+| Source | Ronald Friederich **PeSTO** tables as published on the [Chess Programming Wiki](https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function) and mirrored in `tools/pesto_source.py` (Karls-Sun/pesto.py, MIT) |
+| Generator | `tools/gen_pesto_pst.py` → `mcumax_pesto_tables.h` (`int8`, `round(cp×74/100)`) |
+| Storage | 6 piece types × 64 × 2 (MG+EG) ≈ 768 bytes `.rodata` |
+| Taper | `phase` 0–24 from non-pawn material (PeSTO `gamephaseInc`); `(mg×phase + eg×(24−phase))/24` |
+| Black | PeSTO `sq^56` via `mcumax_pesto_square_index` |
+| Increment | `pst(to)−pst(from)` on quiet plies; phase reduced when a captured piece is removed |
+| Castling | Rook PST delta on rook square (removed separate `+50` king-side bonus) |
+| Removed / avoided double-count | micro-Max pawn structure `9×…`, endgame pawn-push `non_pawn_material>>2`, king “freeze” `−20`, castling `+50` |
+| Kept | Promotion / passer terms (`647−type`, doubled-rank bonus) — material path, not PST |
+
+Captured-piece PST is **not** refunded on captures (unchanged micro-Max
+eval quirk). Host tests: `tests/host/test_pst.c`, `MCUMAX_EXPOSE_EVAL`.
