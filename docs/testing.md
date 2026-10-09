@@ -2,7 +2,7 @@
 
 ## 当前与未来
 
-当前已有文档检查、C11 host/CTest、perft CLI、字体覆盖检查和固件 CI。`tests/perft/cases.json` 是带来源的输入与期望；实际执行结果以 Actions/host 日志为准。PR #2 的 host/CLI 与固件检查通过，但不得把这些结果说成完整真机验收。当前边界见[开发状态](status.md)。
+当前已有文档检查、C11 host/CTest、perft CLI、字体覆盖检查、主机 AI 对局探针（`tools/elo_match.py`，`tests/test_elo_match.py`）和固件 CI。`tests/perft/cases.json` 是带来源的输入与期望；实际执行结果以 Actions/host 日志为准。PR #2 的 host/CLI 与固件检查通过，但不得把这些结果说成完整真机验收。主机强度成批测量方法与结果见 [AI 集成](ai-integration.md)。当前边界见[开发状态](status.md)。
 
 ## perft 门槛
 
