@@ -245,65 +245,6 @@ static bool mcumax_hash_table_owned;
 
 static struct mcumax_hash_stats mcumax_hash_stats;
 
-static const mcumax_move *mcumax_hash_replay_hint;
-static size_t mcumax_hash_replay_hint_count;
-
-struct mcumax_snapshot
-{
-    uint8_t board[sizeof(mcumax.board)];
-    uint8_t current_side;
-    uint8_t en_passant_square;
-    int32_t score;
-    int32_t non_pawn_material;
-#ifdef MCUMAX_HASHING_ENABLED
-    uint32_t hash_key;
-    uint32_t hash_key2;
-#endif
-};
-
-static void mcumax_snapshot_save(struct mcumax_snapshot *snap)
-{
-    memcpy(snap->board, mcumax.board, sizeof(snap->board));
-    snap->current_side = mcumax.current_side;
-    snap->en_passant_square = mcumax.en_passant_square;
-    snap->score = mcumax.score;
-    snap->non_pawn_material = mcumax.non_pawn_material;
-#ifdef MCUMAX_HASHING_ENABLED
-    snap->hash_key = mcumax.hash_key;
-    snap->hash_key2 = mcumax.hash_key2;
-#endif
-}
-
-static void mcumax_snapshot_restore(const struct mcumax_snapshot *snap)
-{
-    memcpy(mcumax.board, snap->board, sizeof(mcumax.board));
-    mcumax.current_side = snap->current_side;
-    mcumax.en_passant_square = snap->en_passant_square;
-    mcumax.score = snap->score;
-    mcumax.non_pawn_material = snap->non_pawn_material;
-#ifdef MCUMAX_HASHING_ENABLED
-    mcumax.hash_key = snap->hash_key;
-    mcumax.hash_key2 = snap->hash_key2;
-#endif
-}
-
-static bool mcumax_snapshot_matches_target(const struct mcumax_snapshot *target)
-{
-    if (mcumax.current_side != target->current_side ||
-        mcumax.en_passant_square != target->en_passant_square)
-        return false;
-
-    for (uint8_t square = 0; square < 0x80; square++)
-    {
-        if (square & MCUMAX_BOARD_MASK)
-            continue;
-        if (mcumax.board[square] != target->board[square])
-            return false;
-    }
-
-    return true;
-}
-
 static void mcumax_hash_sync_after_fen(void)
 {
     bool at_start = true;
@@ -327,45 +268,9 @@ static void mcumax_hash_sync_after_fen(void)
         return;
     }
 
-    /* Without a main-line replay hint, incremental keys are unknown; zero is
-     * safe (search rebuilds keys along the current path). */
+    /* FEN reload clears the table in mcumax_init(); keys restart at zero. */
     mcumax.hash_key = 0;
     mcumax.hash_key2 = 0;
-}
-
-void mcumax_hash_set_replay_hint(const mcumax_move *moves, size_t move_count)
-{
-    mcumax_hash_replay_hint = moves;
-    mcumax_hash_replay_hint_count = move_count;
-}
-
-bool mcumax_hash_sync_by_replay(const mcumax_move *moves, size_t move_count)
-{
-    struct mcumax_snapshot target;
-    size_t i;
-
-    if (moves == NULL || move_count == 0)
-        return false;
-
-    mcumax_snapshot_save(&target);
-    mcumax_init();
-
-    for (i = 0; i < move_count; i++)
-    {
-        if (!mcumax_play_move(moves[i]))
-        {
-            mcumax_snapshot_restore(&target);
-            return false;
-        }
-    }
-
-    if (!mcumax_snapshot_matches_target(&target))
-    {
-        mcumax_snapshot_restore(&target);
-        return false;
-    }
-
-    return true;
 }
 
 #endif
@@ -1162,19 +1067,7 @@ void mcumax_set_fen_position(const char *fen_string)
     mcumax_apply_castling_rights(castle_rights);
 
 #ifdef MCUMAX_HASHING_ENABLED
-    if (mcumax_hash_replay_hint_count > 0 &&
-        mcumax_hash_sync_by_replay(mcumax_hash_replay_hint,
-                                   mcumax_hash_replay_hint_count))
-    {
-        mcumax_hash_replay_hint = NULL;
-        mcumax_hash_replay_hint_count = 0;
-    }
-    else
-    {
-        mcumax_hash_replay_hint = NULL;
-        mcumax_hash_replay_hint_count = 0;
-        mcumax_hash_sync_after_fen();
-    }
+    mcumax_hash_sync_after_fen();
 #endif
 }
 

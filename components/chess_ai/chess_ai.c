@@ -9,7 +9,6 @@
 #include "opening_book.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
@@ -17,50 +16,9 @@
 #endif
 
 #define CHESS_AI_TT_MIN_FREE_HEAP (32u * 1024u)
+#define CHESS_AI_TT_BLOCK_HEADROOM_PERCENT 25u
 
 static bool s_engine_init_done;
-static chess_position s_last_pos;
-static bool s_have_last_pos;
-static mcumax_move s_move_hist[256];
-static size_t s_move_hist_len;
-
-static void core_move_to_mcumax(const chess_move *m, mcumax_move *out) {
-    unsigned file = (unsigned)(m->from % 8u);
-    unsigned rank = (unsigned)(m->from / 8u);
-    unsigned tfile = (unsigned)(m->to % 8u);
-    unsigned trank = (unsigned)(m->to / 8u);
-    out->from = (uint8_t)(((7u - rank) << 4) | file);
-    out->to = (uint8_t)(((7u - trank) << 4) | tfile);
-}
-
-static bool position_reachable_by_one_move(const chess_position *from,
-                                          const chess_position *to,
-                                          chess_move *out) {
-    chess_move moves[CHESS_MAX_MOVES];
-    size_t count = 0;
-    size_t i;
-
-    if (from == NULL || to == NULL || out == NULL) {
-        return false;
-    }
-    if (chess_generate_legal(from, moves, CHESS_MAX_MOVES, &count) != CHESS_OK) {
-        return false;
-    }
-    for (i = 0; i < count; i++) {
-        chess_position probe = *from;
-        chess_undo undo;
-        if (chess_make(&probe, moves[i], &undo) != CHESS_OK) {
-            continue;
-        }
-        if (memcmp(&probe.board, &to->board, sizeof(probe.board)) == 0 &&
-            probe.side_to_move == to->side_to_move &&
-            probe.castling == to->castling && probe.ep_square == to->ep_square) {
-            *out = moves[i];
-            return true;
-        }
-    }
-    return false;
-}
 
 static void ensure_engine_init(void) {
     if (!s_engine_init_done) {
@@ -79,12 +37,19 @@ void chess_ai_engine_init(void) {
         return;
     }
 #ifdef ESP_PLATFORM
-    size_t free_before =
-        (size_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (free_before < need) {
-        ESP_LOGW("chess_ai", "TT skip: need %u bytes, free %u",
-                 (unsigned)need, (unsigned)free_before);
-        return;
+    {
+        size_t largest =
+            (size_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                     MALLOC_CAP_8BIT);
+        size_t need_with_headroom =
+            need + (need * CHESS_AI_TT_BLOCK_HEADROOM_PERCENT) / 100u;
+        if (largest < need_with_headroom) {
+            ESP_LOGW("chess_ai",
+                     "TT skip: need %u+%u%% block, largest block %u",
+                     (unsigned)need, (unsigned)CHESS_AI_TT_BLOCK_HEADROOM_PERCENT,
+                     (unsigned)largest);
+            return;
+        }
     }
 #endif
     if (!mcumax_hash_alloc()) {
@@ -150,34 +115,12 @@ int chess_ai_suggest(const chess_position *pos, uint32_t node_max,
         return -1;
     }
     if (chess_opening_book_probe(pos, 0u, true, out)) {
-        s_last_pos = *pos;
-        s_have_last_pos = true;
         return 0;
     }
     if (chess_position_to_fen(pos, fen, sizeof(fen)) != CHESS_OK) {
         return -1;
     }
-    chess_move delta;
-    if (s_have_last_pos &&
-        position_reachable_by_one_move(&s_last_pos, pos, &delta)) {
-        mcumax_move mm;
-        core_move_to_mcumax(&delta, &mm);
-        if (!mcumax_play_move(mm)) {
-            s_move_hist_len = 0;
-#if MCUMAX_HASH_BITS > 0
-            mcumax_hash_set_replay_hint(NULL, 0);
-#endif
-            mcumax_set_fen_position(fen);
-        } else if (s_move_hist_len < sizeof(s_move_hist) / sizeof(s_move_hist[0])) {
-            s_move_hist[s_move_hist_len++] = mm;
-        }
-    } else {
-        s_move_hist_len = 0;
-#if MCUMAX_HASH_BITS > 0
-        mcumax_hash_set_replay_hint(NULL, 0);
-#endif
-        mcumax_set_fen_position(fen);
-    }
+    mcumax_set_fen_position(fen);
     reply = mcumax_search_best_move(node_max, depth_max);
     if (reply.from == MCUMAX_SQUARE_INVALID ||
         reply.to == MCUMAX_SQUARE_INVALID) {
@@ -206,8 +149,6 @@ int chess_ai_suggest(const chess_position *pos, uint32_t node_max,
         return -1;
     }
     *out = m;
-    s_last_pos = *pos;
-    s_have_last_pos = true;
     return 0;
 }
 

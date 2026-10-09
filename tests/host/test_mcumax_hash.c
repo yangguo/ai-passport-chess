@@ -109,15 +109,6 @@ static void test_cli_default_start_move(void) {
 }
 
 #if MCUMAX_HASH_BITS > 0
-static void core_move_to_mcumax(const chess_move *m, mcumax_move *out) {
-  unsigned file = (unsigned)(m->from % 8u);
-  unsigned rank = (unsigned)(m->from / 8u);
-  unsigned tfile = (unsigned)(m->to % 8u);
-  unsigned trank = (unsigned)(m->to / 8u);
-  out->from = (uint8_t)(((7u - rank) << 4) | file);
-  out->to = (uint8_t)(((7u - trank) << 4) | tfile);
-}
-
 static mcumax_move search_move(const char *fen, uint32_t nodes,
                                unsigned depth) {
   mcumax_set_fen_position(fen);
@@ -157,76 +148,41 @@ static void test_fixed_depth_parity_positions(void) {
   }
 }
 
-static void test_hash_incremental_matches_fen_reseed(void) {
-  chess_position pos;
-  chess_move list[128];
-  chess_undo undo;
-  char fen[CHESS_FEN_MAX];
-  mcumax_move hist[64];
-  size_t hist_len = 0;
-  uint32_t replay_k, replay_k2, fen_k, fen_k2;
-  unsigned seed = 0x9e3779b9u;
-  int plies;
-  size_t h;
+static void test_partial_castling_fen_reload_stable(void) {
+  const char *fen =
+      "1rbqkb1r/1ppppppp/8/p7/1n2QP2/2NP3P/PPP3P1/1RB1KBNn w k - 1 9";
+  mcumax_move a[96];
+  mcumax_move b[96];
+  uint32_t na;
+  uint32_t nb;
+  size_t i;
 
-  CHECK(chess_position_from_fen(&pos,
-                                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w "
-                                "KQkq - 0 1") == CHESS_OK);
-
-  /* Partial castling rights (e.g. "k" only) can leave rook MOVEF bytes that
-   * differ between pure play_move replay and FEN reload; keep plies short. */
-  for (plies = 0; plies < 10; plies++) {
-    size_t n = 0;
-    mcumax_move mm;
-    chess_move pick;
-    size_t idx;
-
-    if (chess_generate_legal(&pos, list, 128u, &n) != CHESS_OK || n == 0) {
-      break;
-    }
-    seed = seed * 1664525u + 1013904223u;
-    idx = (size_t)(seed % n);
-    pick = list[idx];
-    core_move_to_mcumax(&pick, &mm);
-    CHECK(hist_len < sizeof(hist) / sizeof(hist[0]));
-    hist[hist_len++] = mm;
-    CHECK(chess_make(&pos, pick, &undo) == CHESS_OK);
-    CHECK(chess_position_to_fen(&pos, fen, sizeof(fen)) == CHESS_OK);
-
-    mcumax_init();
-    for (h = 0; h < hist_len; h++) {
-      CHECK(mcumax_play_move(hist[h]));
-    }
-    mcumax_hash_get_keys(&replay_k, &replay_k2);
-
-    mcumax_hash_set_replay_hint(hist, hist_len);
-    mcumax_set_fen_position(fen);
-    mcumax_hash_get_keys(&fen_k, &fen_k2);
-
-    if (replay_k != fen_k || replay_k2 != fen_k2) {
-      printf("hash mismatch ply %d fen=%s\n  replay %u %u\n  fen    %u %u\n",
-             plies, fen, replay_k, replay_k2, fen_k, fen_k2);
-    }
-    CHECK(replay_k == fen_k && replay_k2 == fen_k2);
+  mcumax_set_fen_position(fen);
+  na = mcumax_search_valid_moves(a, 96);
+  mcumax_set_fen_position(fen);
+  nb = mcumax_search_valid_moves(b, 96);
+  CHECK(na == nb);
+  for (i = 0; i < na; i++) {
+    CHECK(a[i].from == b[i].from && a[i].to == b[i].to);
+    CHECK(!(a[i].from == 0x74 && a[i].to == 0x76));
   }
 }
 
-static void test_tt_not_slower_in_nodes(void) {
+static void test_tt_warm_not_slower_than_cold_within_search(void) {
   const char *fen =
       "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
   uint32_t nodes_cold;
   uint32_t nodes_warm;
 
-  mcumax_hash_clear();
   mcumax_set_fen_position(fen);
+  mcumax_hash_clear();
   (void)mcumax_search_best_move(80000u, 5u);
   nodes_cold = mcumax_get_last_search_nodes();
 
-  mcumax_set_fen_position(fen);
+  /* Same position, TT populated — no second set_fen (that would clear TT). */
   (void)mcumax_search_best_move(80000u, 5u);
   nodes_warm = mcumax_get_last_search_nodes();
 
-  /* Warm TT must not increase nodes at the same budget (allows cutoffs). */
   CHECK(nodes_warm <= nodes_cold);
 }
 #endif
@@ -242,9 +198,9 @@ int main(void) {
   test_random_line_legal();
 #if MCUMAX_HASH_BITS > 0
   test_hash_startpos_zero();
-  test_hash_incremental_matches_fen_reseed();
+  test_partial_castling_fen_reload_stable();
   test_fixed_depth_parity_positions();
-  test_tt_not_slower_in_nodes();
+  test_tt_warm_not_slower_than_cold_within_search();
 #endif
   if (failures) {
     printf("%d test(s) failed\n", failures);

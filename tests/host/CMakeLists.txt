@@ -89,6 +89,16 @@ add_executable(test_mcumax_hash_off
 target_include_directories(test_mcumax_hash_off PRIVATE ${AI_INCLUDES})
 chess_ai_target_hash_bits(test_mcumax_hash_off 0)
 add_test(NAME mcumax_hash_off COMMAND test_mcumax_hash_off)
+
+add_executable(test_ai_fen_reload
+  test_ai_fen_reload.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_SOURCES}
+)
+target_include_directories(test_ai_fen_reload PRIVATE ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_ai_fen_reload 12)
+add_test(NAME ai_fen_reload COMMAND test_ai_fen_reload)
 add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
   ${MODEL_DIR}/chess_ui_model.c)
 target_include_directories(test_ui_model PRIVATE

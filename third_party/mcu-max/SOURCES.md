@@ -25,9 +25,10 @@
   1024 entries (bits=10): host Elo showed large regressions. Upstream
   `MCUMAX_HASHING_ENABLED` without resizing pulled 2^24 entries — never
   use that on-device. Scramble keys are in `mcumax_hash_scramble_table.c`
-  (Flash). Table cleared on `mcumax_init`. FEN load sets piece moved flags
-  and castling virginity, then optional hash replay. Firmware allocates only
-  if internal free heap stays ≥ 32 KiB **after** the table is allocated.
+  (Flash). Table cleared on every `mcumax_set_fen_position` (`mcumax_init`).
+  FEN load sets piece moved flags and castling virginity; hash keys restart
+  at zero. Firmware allocates 4096 entries only when the largest internal
+  block fits alloc+25% and ≥32 KiB heap remains after alloc.
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
   adapter converts both ways; FEN goes in verbatim
 - "Compliant with FIDE laws (except for underpromotion)": replies
