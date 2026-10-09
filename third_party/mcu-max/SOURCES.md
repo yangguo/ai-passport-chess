@@ -28,7 +28,8 @@
   (Flash). Table cleared on every `mcumax_set_fen_position` (`mcumax_init`).
   FEN load sets piece moved flags and castling virginity; hash keys restart
   at zero. Firmware allocates 4096 entries only when the largest internal
-  block fits alloc+25% and ≥32 KiB heap remains after alloc.
+  block fits alloc+25%, ≥32 KiB total heap remains after alloc, and largest
+  remaining block ≥16 KiB.
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
   adapter converts both ways; FEN goes in verbatim
 - "Compliant with FIDE laws (except for underpromotion)": replies

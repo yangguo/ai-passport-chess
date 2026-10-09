@@ -16,6 +16,7 @@
 #endif
 
 #define CHESS_AI_TT_MIN_FREE_HEAP (32u * 1024u)
+#define CHESS_AI_TT_MIN_LARGEST_BLOCK_AFTER (16u * 1024u)
 #define CHESS_AI_TT_BLOCK_HEADROOM_PERCENT 25u
 
 static bool s_engine_init_done;
@@ -64,11 +65,17 @@ void chess_ai_engine_init(void) {
     {
         size_t free_after =
             (size_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        if (free_after < CHESS_AI_TT_MIN_FREE_HEAP) {
+        size_t largest_after =
+            (size_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                     MALLOC_CAP_8BIT);
+        if (free_after < CHESS_AI_TT_MIN_FREE_HEAP ||
+            largest_after < CHESS_AI_TT_MIN_LARGEST_BLOCK_AFTER) {
             ESP_LOGW("chess_ai",
-                     "TT disabled: %u bytes free after %u-byte table (min %u)",
-                     (unsigned)free_after, (unsigned)need,
-                     (unsigned)CHESS_AI_TT_MIN_FREE_HEAP);
+                     "TT disabled: free %u largest %u after %u-byte table "
+                     "(min free %u, min largest %u)",
+                     (unsigned)free_after, (unsigned)largest_after,
+                     (unsigned)need, (unsigned)CHESS_AI_TT_MIN_FREE_HEAP,
+                     (unsigned)CHESS_AI_TT_MIN_LARGEST_BLOCK_AFTER);
             mcumax_hash_shutdown();
         }
     }

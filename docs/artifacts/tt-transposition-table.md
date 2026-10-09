@@ -36,6 +36,7 @@ Firmware (`MCUMAX_HASH_BITS=12`). `chess_ai_engine_init()` on ESP32-C3:
 
 1. Largest internal 8-bit free block ≥ table size **+ 25%**
 2. After alloc, total internal free heap ≥ **32 KiB**
+3. After alloc, largest internal free block ≥ **16 KiB**
 
 Otherwise `mcumax_hash_shutdown()` — search runs with TT off. Host builds allocate when `MCUMAX_HASH_BITS > 0` without the ESP gate.
 

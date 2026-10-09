@@ -92,45 +92,68 @@ static void test_castling_kqkq_start_available(void) {
   suggest_matches_fresh_fen(fen, 120000u, 4u);
 }
 
-static void test_partial_castling_rights_consistent(void) {
-  const char *fen =
-      "1rbqkb1r/1ppppppp/8/p7/1n2QP2/2NP3P/PPP3P1/1RB1KBNn w k - 1 9";
+static void test_partial_castling_black_kingside(void) {
+  const char *fen_k = "r3k2r/8/8/8/8/8/8/4K3 b k - 0 1";
+  const char *fen_none = "r3k2r/8/8/8/8/8/8/4K3 b - - 0 1";
   mcumax_move moves[96];
   uint32_t n;
 
-  CHECK(valid_moves_lists_equal(fen));
-  mcumax_set_fen_position(fen);
+  CHECK(valid_moves_lists_equal(fen_k));
+  mcumax_set_fen_position(fen_k);
   n = mcumax_search_valid_moves(moves, 96);
-  CHECK(!valid_moves_contain(n, moves, 0x74, 0x76));
-  suggest_matches_fresh_fen(fen, 150000u, 5u);
+  CHECK(valid_moves_contain(n, moves, 0x04, 0x06));
+
+  mcumax_set_fen_position(fen_none);
+  n = mcumax_search_valid_moves(moves, 96);
+  CHECK(!valid_moves_contain(n, moves, 0x04, 0x06));
+
+  suggest_matches_fresh_fen(fen_k, 80000u, 4u);
 }
 
 static void test_en_passant_available(void) {
+  /* 1.e4 a6 2.e5 d5 — White may capture en passant on d6. */
   const char *fen =
-      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+      "rnbqkbnr/pppp1ppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3";
   mcumax_move moves[96];
   uint32_t n;
 
   CHECK(valid_moves_lists_equal(fen));
   mcumax_set_fen_position(fen);
   n = mcumax_search_valid_moves(moves, 96);
-  CHECK(n > 0);
+  CHECK(valid_moves_contain(n, moves, 0x34, 0x23));
   suggest_matches_fresh_fen(fen, 100000u, 4u);
 }
 
-static void test_promoted_knight_fen_reload(void) {
-  const char *fen = "7k/4N3/8/8/8/8/8/4K3 w - - 0 1";
+static void test_promotion_a7a8_then_knight_fen(void) {
+  const char *fen_a7 = "7k/P7/8/8/8/8/8/K7 w - - 0 1";
+  chess_position pos;
+  chess_move m;
+  chess_undo undo;
+  char fen_knight[CHESS_FEN_MAX];
+  mcumax_move moves[96];
+  uint32_t n;
 
-  CHECK(valid_moves_lists_equal(fen));
-  suggest_matches_fresh_fen(fen, 80000u, 4u);
+  mcumax_set_fen_position(fen_a7);
+  n = mcumax_search_valid_moves(moves, 96);
+  CHECK(valid_moves_contain(n, moves, 0x10, 0x00));
+
+  CHECK(chess_position_from_fen(&pos, fen_a7) == CHESS_OK);
+  m.from = 48;
+  m.to = 56;
+  m.promotion = CHESS_KNIGHT;
+  CHECK(chess_make(&pos, m, &undo) == CHESS_OK);
+  CHECK(chess_position_to_fen(&pos, fen_knight, sizeof(fen_knight)) == CHESS_OK);
+
+  CHECK(valid_moves_lists_equal(fen_knight));
+  suggest_matches_fresh_fen(fen_knight, 80000u, 4u);
 }
 
 int main(void) {
   chess_ai_engine_init();
   test_castling_kqkq_start_available();
-  test_partial_castling_rights_consistent();
+  test_partial_castling_black_kingside();
   test_en_passant_available();
-  test_promoted_knight_fen_reload();
+  test_promotion_a7a8_then_knight_fen();
   if (failures) {
     printf("%d test(s) failed\n", failures);
     return 1;

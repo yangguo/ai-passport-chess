@@ -56,4 +56,4 @@ parts combined (*.partN.log). Mean sec/game includes stall gaps, so use the medi
 Acceptance (>= +30 Elo in one setting, none significantly negative): **NOT MET**. TT(1024) is significantly negative in every setting
 (-340 to -590 Elo vs fixnott; -175 to -380 vs main). tt-s3-1M is partial (see table), but the result cannot flip.
 Diagnostics point to table size: 4096/65536 entries are at or above fixnott (CIs include 0, 40 games) instead of -400.
-Separately, fixnott itself is +100..+210 Elo over main (castling-aware incremental play), so that part of the branch is a real gain.
+Separately, fixnott itself is +100..+210 Elo over main (FEN moved/castling virginity fix vs main marking every piece moved), so that part of the branch is a real gain.

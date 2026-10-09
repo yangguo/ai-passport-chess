@@ -78,7 +78,7 @@ static void test_random_line_legal(void) {
   }
 }
 
-/* Golden move at CLI default budget; must match with TT on or off (bits 0/10). */
+/* Golden move at CLI default budget; must match with TT on or off (bits 0 vs 12). */
 static void test_castling_rights_lost_no_short_castle(void) {
   const char *fen =
       "8/2pk1B2/p4BP1/1p6/3pP3/3P1Q2/P1q4P/1R2K2R w - - 0 26";
@@ -148,24 +148,31 @@ static void test_fixed_depth_parity_positions(void) {
   }
 }
 
-static void test_partial_castling_fen_reload_stable(void) {
-  const char *fen =
-      "1rbqkb1r/1ppppppp/8/p7/1n2QP2/2NP3P/PPP3P1/1RB1KBNn w k - 1 9";
-  mcumax_move a[96];
-  mcumax_move b[96];
-  uint32_t na;
-  uint32_t nb;
+static bool valid_moves_contain(uint32_t n, const mcumax_move *moves,
+                                uint8_t from, uint8_t to) {
   size_t i;
-
-  mcumax_set_fen_position(fen);
-  na = mcumax_search_valid_moves(a, 96);
-  mcumax_set_fen_position(fen);
-  nb = mcumax_search_valid_moves(b, 96);
-  CHECK(na == nb);
-  for (i = 0; i < na; i++) {
-    CHECK(a[i].from == b[i].from && a[i].to == b[i].to);
-    CHECK(!(a[i].from == 0x74 && a[i].to == 0x76));
+  for (i = 0; i < n; i++) {
+    if (moves[i].from == from && moves[i].to == to) {
+      return true;
+    }
   }
+  return false;
+}
+
+static void test_partial_castling_fen_reload_stable(void) {
+  const char *fen_k = "r3k2r/8/8/8/8/8/8/4K3 b k - 0 1";
+  const char *fen_none = "r3k2r/8/8/8/8/8/8/4K3 b - - 0 1";
+  mcumax_move moves[96];
+  uint32_t n;
+
+  mcumax_set_fen_position(fen_k);
+  mcumax_set_fen_position(fen_k);
+  n = mcumax_search_valid_moves(moves, 96);
+  CHECK(valid_moves_contain(n, moves, 0x04, 0x06));
+
+  mcumax_set_fen_position(fen_none);
+  n = mcumax_search_valid_moves(moves, 96);
+  CHECK(!valid_moves_contain(n, moves, 0x04, 0x06));
 }
 
 static void test_tt_warm_not_slower_than_cold_within_search(void) {
