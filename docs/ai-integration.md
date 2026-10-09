@@ -51,6 +51,35 @@ Easy 的 15% 随机着仅在离开库后生效。来源与再生成见 `componen
 
 mcu-max 不暴露多候选评分，不虚构 top-N 接口。Easy 初版随机从合法着采样；后续若需要“次优”，必须加 root scoring adapter 和测试。先做强制一步将死、避免一步被将死等核心战术 fixture；再以固定开局、相同种子/预算自对弈评估调参。不把四子棋 nodes/s 换算成象棋性能，也不凭深度声称 Elo。
 
+## Host 搜索统计（`tools/bench_mcumax_pair.sh`，Stockfish 无关）
+
+同一 `node_max` / `depth_max` 下，PeSTO 改变剪枝路径，**nodes/s 不能当作纯 eval 耗时**。
+须同时看 `avg_nodes` 与 `avg_iter_depth`（`mcumax_get_last_search_stats`）。
+
+| 预算 | 臂 | avg_nodes | avg_iter_depth | nps（host gcc -O2） |
+|---:|---|---:|---:|---:|
+| 200k / d4 | main（中心权重） | 18 899 | 7.0 | 4.11 M |
+| 200k / d4 | PeSTO（74 缩放） | 46 298 | 7.0 | 3.30 M |
+| 1M / d8 | main | 7 593 002 | 10.0 | 3.91 M |
+| 1M / d8 | PeSTO | 4 538 283 | 10.0 | 3.27 M |
+
+此前约 2.80 M→3.42 M 的跳变来自未配对比较不同有效节点量，而非单独 eval 加速。
+
+## M2 PeSTO A/B（host，`tools/elo_compare_engines.py`，Stockfish **17.1**，开局库不变）
+
+配对方法：同一 harness、交替执白/黑、从初始局面经 adapter 开局库；先跑满 main 臂再跑 pst 臂（对 SF 的 Elo 差分仍可比较）。
+`elo_diff_pst_minus_main` = pst 相对 main 的 Elo（相对同一 SF skill）。
+
+| PeSTO 缩放（`--pawn-unit`） | 预算 | SF skill | 局数 | pst−main Elo | 95% CI |
+|---:|---|---:|---:|---:|---|
+| 52 | 200k/d4 | 0 | 200 | **−73** | [−141, +12] |
+| 52 | 200k/d4 | 0 | 50 | +76 | 宽（探索） |
+| 62 | 200k/d4 | 0 | 50 | −163 | [−283, +32] |
+| 74 | 200k/d4 | 0 | 50 | −79 | [−206, +119] |
+
+**验收（≥+30 Elo 且无一臂显著为负）：未通过。** 200 局 skill 0（缩放 52，相对 50 局最佳）仍为约 −73 Elo。
+skill 3 / 1M·d8 结果见 PR 描述（跑完后更新）。不建议在未再调参前合并。
+
 ## 实测强度基线（host，2026-10-07，tools/elo_match.py 对 Stockfish）
 
 | 我方配置 | 对手 | 比分 | 含义 |

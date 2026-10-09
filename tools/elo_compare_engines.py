@@ -30,7 +30,15 @@ def elo_ci(p: float, n: int, z: float = 1.96) -> tuple[float, float]:
     return elo_diff(hi), elo_diff(lo)
 
 
-def run_arm(cli_path: str, stockfish: str, games: int, skill: int, nodes: int, depth: int):
+def run_arm(
+    label: str,
+    cli_path: str,
+    stockfish: str,
+    games: int,
+    skill: int,
+    nodes: int,
+    depth: int,
+):
     budget = "ai %d %d" % (nodes, depth)
     engine = chess.engine.SimpleEngine.popen_uci(stockfish)
     score = 0.0
@@ -42,12 +50,18 @@ def run_arm(cli_path: str, stockfish: str, games: int, skill: int, nodes: int, d
             our_color = chess.WHITE if game % 2 == 0 else chess.BLACK
             cli = Cli(cli_path, budget)
             outcome = play_game(cli, engine, our_color, 200)
-            cli.close()
             if outcome[0] is None:
+                cli.close()
                 aborted += 1
                 continue
             played += 1
             score += outcome[0]
+            if (game + 1) % 10 == 0 or game + 1 == games:
+                print(
+                    "  %s game %d/%d score %.1f/%.0f"
+                    % (label, game + 1, games, score, played),
+                    flush=True,
+                )
     finally:
         engine.quit()
     return score, played, aborted
@@ -68,7 +82,13 @@ def main() -> int:
     for label, path in ("main", args.main_cli), ("pst", args.pst_cli):
         print("=== %s ===" % label)
         score, played, aborted = run_arm(
-            path, args.stockfish, args.games, args.skill, args.nodes, args.depth
+            label,
+            path,
+            args.stockfish,
+            args.games,
+            args.skill,
+            args.nodes,
+            args.depth,
         )
         if aborted:
             print("aborted %d games" % aborted)

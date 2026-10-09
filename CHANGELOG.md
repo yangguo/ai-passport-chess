@@ -6,7 +6,9 @@
   lines in `opening_lines.txt`); `book_seed == 0` keeps host Elo harness reproducible.
 - **Engine:** PeSTO MG/EG PST in `mcu-max` (`mcumax_pesto_tables.h`, scaled
   `int8`); tapered eval; removed overlapping pawn structure / castling / king-freeze
-  bonuses; host `test_pst` + `tools/gen_pesto_pst.py`.
+  bonuses; host `test_pst` + `tools/gen_pesto_pst.py` / `tools/elo_compare_engines.py`.
+  Host A/B vs main (SF 17.1) did **not** meet the +30 Elo milestone at 200 games;
+  see `docs/ai-integration.md`.
 
 ## 0.1.0-design — 2026-10-06
 

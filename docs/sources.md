@@ -12,6 +12,7 @@
 | [mcu-max header](https://github.com/Gissio/mcu-max/blob/aa03caffce50729566b5db6965bf735c31f33eea/src/mcu-max.h) | `aa03caffce50729566b5db6965bf735c31f33eea`，1.0.6 API、欠升变限制 |
 | [mcu-max source](https://github.com/Gissio/mcu-max/blob/aa03caffce50729566b5db6965bf735c31f33eea/src/mcu-max.c) | 回调/停止、FEN0x88方向、hash默认关闭与巨表 |
 | [mcu-max LICENSE](https://github.com/Gissio/mcu-max/blob/aa03caffce50729566b5db6965bf735c31f33eea/LICENSE) | MIT；集成时保留Gissio版权全文 |
+| [PeSTO evaluation](https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function) | PST 数值来源；仓库内 `tools/pesto_source.py`（Karls-Sun/pesto.py，MIT）；生成 `mcumax_pesto_tables.h`，按 mcu-max 兵值 `74/100` 缩放为 `int8` |
 | [FIDE Laws](https://handbook.fide.com/chapter/e012023) | Article3走子、5终局、9申报/自动和棋；无需复制全文 |
 | [Perft Results](https://www.chessprogramming.org/Perft_Results) | benchmark FEN与节点值；非引擎依赖，不复制文章 |
 | [ESP-IDF NVS v5.5.3](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32c3/api-reference/storage/nvs_flash.html) | set_blob/commit、错误、空间与掉电语义 |
