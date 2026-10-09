@@ -25,8 +25,11 @@
   Upstream `MCUMAX_HASHING_ENABLED` without resizing pulled 2^24 entries —
   never use that on-device. Scramble keys are the deterministic `srand(1)`
   table in `mcumax_hash_scramble_table.c` (Flash). Table is cleared on
-  every `mcumax_init` / `mcumax_set_fen_position`. Firmware skips allocation
-  when free internal heap would fall below 32 KiB after the TT.
+  every `mcumax_init` / `mcumax_set_fen_position`. After FEN parse, Zobrist
+  keys are reseeded from the board relative to the calibrated start position
+  (upstream left keys at 0, which breaks TT once `set_fen` leaves the
+  standard setup). Firmware skips allocation when free internal heap would
+  fall below 32 KiB after the TT.
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
   adapter converts both ways; FEN goes in verbatim
 - "Compliant with FIDE laws (except for underpromotion)": replies

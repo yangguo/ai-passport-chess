@@ -131,7 +131,12 @@ void mcumax_hash_clear(void);
 bool mcumax_hash_bind(void *table, bool owned);
 bool mcumax_hash_alloc(void);
 void mcumax_hash_shutdown(void);
+/** Piece-only Zobrist keys for the current board (testing/diagnostics). */
+void mcumax_hash_get_keys(uint32_t *key, uint32_t *key2);
 #endif
+
+/** Nodes consumed by the last search (reset at search start). */
+uint32_t mcumax_get_last_search_nodes(void);
 
 #ifdef __cplusplus
 }

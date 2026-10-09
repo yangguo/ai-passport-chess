@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SF="${STOCKFISH:-/tmp/stockfish/stockfish-ubuntu-x86-64-avx2}"
+SF="${STOCKFISH:-/tmp/stockfish/stockfish/stockfish-ubuntu-x86-64-avx2}"
 LOG="$ROOT/artifacts/elo"
 mkdir -p "$LOG"
 CLI_NOTT="$ROOT/build/cli-nott/chess-cli"

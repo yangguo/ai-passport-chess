@@ -137,6 +137,49 @@ _Static_assert(sizeof(struct HashEntry) == 12, "HashEntry layout must match micr
 static struct HashEntry *mcumax_hash_table;
 static bool mcumax_hash_table_owned;
 
+static uint32_t mcumax_hash_start_key;
+static uint32_t mcumax_hash_start_key2;
+static bool mcumax_hash_start_calibrated;
+
+static void mcumax_hash_sum_board(uint32_t *key, uint32_t *key2)
+{
+    uint32_t k = 0;
+    uint32_t k2 = 0;
+
+    for (uint8_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        uint8_t piece = mcumax.board[square];
+        k += HashScramble(square, piece);
+        k2 += HashScramble(square + 8, piece);
+    }
+
+    *key = k;
+    *key2 = k2;
+}
+
+static void mcumax_hash_calibrate_start(void)
+{
+    if (mcumax_hash_start_calibrated)
+        return;
+
+    mcumax_hash_sum_board(&mcumax_hash_start_key, &mcumax_hash_start_key2);
+    mcumax_hash_start_calibrated = true;
+}
+
+static void mcumax_hash_reseed_from_board(void)
+{
+    uint32_t key;
+    uint32_t key2;
+
+    mcumax_hash_calibrate_start();
+    mcumax_hash_sum_board(&key, &key2);
+    mcumax.hash_key = key - mcumax_hash_start_key;
+    mcumax.hash_key2 = key2 - mcumax_hash_start_key2;
+}
+
 #endif
 
 typedef bool (*mcumax_move_callback)(mcumax_move move);
@@ -685,6 +728,7 @@ void mcumax_init()
     mcumax.user_data = NULL;
 
 #ifdef MCUMAX_HASHING_ENABLED
+    mcumax_hash_calibrate_start();
     mcumax.hash_key = 0;
     mcumax.hash_key2 = 0;
     mcumax_hash_clear();
@@ -893,6 +937,10 @@ void mcumax_set_fen_position(const char *fen_string)
             break;
         }
     }
+
+#ifdef MCUMAX_HASHING_ENABLED
+    mcumax_hash_reseed_from_board();
+#endif
 }
 
 mcumax_piece mcumax_get_current_side(void)
@@ -963,7 +1011,20 @@ void mcumax_stop_search(void)
     mcumax.stop_search = true;
 }
 
+uint32_t mcumax_get_last_search_nodes(void)
+{
+    return mcumax.node_count;
+}
+
 #if MCUMAX_HASH_BITS > 0
+
+void mcumax_hash_get_keys(uint32_t *key, uint32_t *key2)
+{
+    if (key != NULL)
+        *key = mcumax.hash_key;
+    if (key2 != NULL)
+        *key2 = mcumax.hash_key2;
+}
 
 size_t mcumax_hash_table_bytes(void)
 {
