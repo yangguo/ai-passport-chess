@@ -17,9 +17,9 @@ bench() {
 }
 
 for fen in "$FEN" "$MID"; do
-  for nodes depth in "200000 4" "1000000 8"; do
-    bench "nott-${nodes}-d${depth}" "$CLI_NOTT" "$nodes" "$depth" "$fen"
-    bench "tt-${nodes}-d${depth}" "$CLI_TT" "$nodes" "$depth" "$fen"
-  done
+  bench "nott-200000-d4" "$CLI_NOTT" 200000 4 "$fen"
+  bench "tt-200000-d4" "$CLI_TT" 200000 4 "$fen"
+  bench "nott-1000000-d8" "$CLI_NOTT" 1000000 8 "$fen"
+  bench "tt-1000000-d8" "$CLI_TT" 1000000 8 "$fen"
 done
 echo "bench log: $LOG/tt-bench.log"
