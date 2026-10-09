@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONUNBUFFERED=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SF="${STOCKFISH:-/tmp/stockfish/stockfish/stockfish-ubuntu-x86-64-avx2}"
 LOG="$ROOT/artifacts/elo"
