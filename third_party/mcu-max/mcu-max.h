@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define MCUMAX_ID "mcu-max 1.0.6"
@@ -120,6 +121,17 @@ void mcumax_set_callback(mcumax_callback callback, void *userdata);
  * @brief Stops the current search. To be called from the user callback.
  */
 void mcumax_stop_search(void);
+
+#if !defined(MCUMAX_HASH_BITS) || MCUMAX_HASH_BITS > 0
+/** Bytes needed for the compile-time transposition table (0 when disabled). */
+size_t mcumax_hash_table_bytes(void);
+bool mcumax_hash_is_active(void);
+void mcumax_hash_clear(void);
+/** Take ownership of a caller-allocated table (memset on bind). */
+bool mcumax_hash_bind(void *table, bool owned);
+bool mcumax_hash_alloc(void);
+void mcumax_hash_shutdown(void);
+#endif
 
 #ifdef __cplusplus
 }

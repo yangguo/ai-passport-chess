@@ -68,6 +68,7 @@ bool chess_ai_task_start(void) {
     if (s_worker != NULL) {
         return true;
     }
+    chess_ai_engine_init();
     s_requests = xQueueCreate(1, sizeof(chess_ai_request));
     if (s_requests == NULL) {
         return false;

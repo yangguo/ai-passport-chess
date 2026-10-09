@@ -8,6 +8,54 @@
 #include "chess_core.h"
 #include "opening_book.h"
 
+#include <stdlib.h>
+
+#ifdef ESP_PLATFORM
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#endif
+
+#define CHESS_AI_TT_MIN_FREE_HEAP (32u * 1024u)
+
+static bool s_engine_init_done;
+
+static void ensure_engine_init(void) {
+    if (!s_engine_init_done) {
+        chess_ai_engine_init();
+    }
+}
+
+void chess_ai_engine_init(void) {
+    if (s_engine_init_done) {
+        return;
+    }
+    s_engine_init_done = true;
+#if !defined(MCUMAX_HASH_BITS) || MCUMAX_HASH_BITS > 0
+    size_t need = mcumax_hash_table_bytes();
+    if (need == 0) {
+        return;
+    }
+#ifdef ESP_PLATFORM
+    size_t free_before =
+        (size_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (free_before < need + CHESS_AI_TT_MIN_FREE_HEAP) {
+        ESP_LOGW("chess_ai",
+                 "TT skip: need %u bytes, free %u (min free %u after alloc)",
+                 (unsigned)need, (unsigned)free_before,
+                 (unsigned)CHESS_AI_TT_MIN_FREE_HEAP);
+        return;
+    }
+#endif
+    if (!mcumax_hash_alloc()) {
+#ifdef ESP_PLATFORM
+        ESP_LOGW("chess_ai", "TT alloc failed (%u bytes)", (unsigned)need);
+#else
+        (void)need;
+#endif
+    }
+#endif
+}
+
 void chess_ai_level_budgets(chess_ai_level level, uint32_t *deadline_ms,
                             uint32_t *node_max, unsigned *depth_max) {
     if (deadline_ms == NULL || node_max == NULL || depth_max == NULL) {
@@ -35,6 +83,7 @@ void chess_ai_level_budgets(chess_ai_level level, uint32_t *deadline_ms,
 
 int chess_ai_suggest(const chess_position *pos, uint32_t node_max,
                      unsigned depth_max, chess_move *out) {
+    ensure_engine_init();
     char fen[CHESS_FEN_MAX];
     mcumax_move reply;
     chess_move m;
@@ -128,6 +177,7 @@ static bool collect_legal(const chess_position *pos, chess_move *out,
 }
 
 void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
+    ensure_engine_init();
     chess_move legal[CHESS_MAX_MOVES];
     size_t count = 0;
     char fen[CHESS_FEN_MAX];

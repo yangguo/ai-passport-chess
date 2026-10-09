@@ -71,6 +71,10 @@ typedef struct chess_ai_job {
 
 #define CHESS_AI_EASY_RANDOM_PCT 15u
 
+/** Allocate the engine transposition table once (heap). On firmware, skips
+ * allocation when free internal heap would drop below 32 KiB after the TT. */
+void chess_ai_engine_init(void);
+
 /* One-shot suggest for the side to move (used by the host CLI).
  * Returns 0 with *out set, nonzero on any failure. */
 int chess_ai_suggest(const chess_position *pos, uint32_t node_max,

@@ -30,7 +30,12 @@ add_executable(chess-cli
   ${AI_DIR}/chess_ai.c
   ${AI_DIR}/opening_book.c
   ${ENGINE_DIR}/mcu-max.c
+  ${ENGINE_DIR}/mcumax_hash_scramble_table.c
 )
+if(NOT DEFINED MCUMAX_HASH_BITS)
+  set(MCUMAX_HASH_BITS 10)
+endif()
+target_compile_definitions(chess-cli PRIVATE MCUMAX_HASH_BITS=${MCUMAX_HASH_BITS})
 target_include_directories(chess-cli PRIVATE
   ${CORE_DIR}/include ${STORAGE_DIR}/include
   ${AI_DIR}/include ${AI_DIR} ${ENGINE_DIR})

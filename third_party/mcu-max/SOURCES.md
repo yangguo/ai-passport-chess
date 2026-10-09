@@ -20,8 +20,13 @@
 - Local patch: `mcumax_init` clears interface fields (callback,
   valid-move buffer pointers, stop flag) on every `set_fen` so a
   search cannot leave stale globals for the next adapter call
-- Hash table OFF by default (`MCUMAX_HASHING_ENABLED` commented out);
-  enabling pulls a 2^24-entry table — never enable on-device
+- Transposition table: compile-time `MCUMAX_HASH_BITS` (default **10** →
+  1024 entries, ~12 KiB heap on device after `chess_ai_engine_init`).
+  Upstream `MCUMAX_HASHING_ENABLED` without resizing pulled 2^24 entries —
+  never use that on-device. Scramble keys are the deterministic `srand(1)`
+  table in `mcumax_hash_scramble_table.c` (Flash). Table is cleared on
+  every `mcumax_init` / `mcumax_set_fen_position`. Firmware skips allocation
+  when free internal heap would fall below 32 KiB after the TT.
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
   adapter converts both ways; FEN goes in verbatim
 - "Compliant with FIDE laws (except for underpromotion)": replies

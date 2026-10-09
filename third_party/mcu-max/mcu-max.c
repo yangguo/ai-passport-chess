@@ -16,8 +16,17 @@
 
 #include "mcu-max.h"
 
-// Configuration
-// #define MCUMAX_HASHING_ENABLED
+/* Transposition table size: 2^MCUMAX_HASH_BITS entries (0 = disabled). */
+#ifndef MCUMAX_HASH_BITS
+#define MCUMAX_HASH_BITS 10
+#endif
+
+#if MCUMAX_HASH_BITS > 0
+#define MCUMAX_HASHING_ENABLED 1
+#define MCUMAX_HASH_TABLE_SIZE (1u << (MCUMAX_HASH_BITS))
+#else
+#define MCUMAX_HASH_TABLE_SIZE 1u
+#endif
 
 // Constants
 #define MCUMAX_BOARD_MASK 0x88
@@ -100,20 +109,19 @@ static const int8_t mcumax_board_setup[] = {
     MCUMAX_ROOK,
 };
 
-#ifdef MCUMAX_HASHING_ENABLED
+#if MCUMAX_HASH_BITS > 0
 
 #define MCUMAX_HASH_SCRAMBLE_TABLE_SIZE 1035
-#define MCUMAX_HASH_TABLE_SIZE (1 << 24)
 
-#define HashScramble(A, B)                \
-    *(uint32_t *)(mcumax_scramble_table + \
+extern const uint8_t mcumax_hash_scramble_table[MCUMAX_HASH_SCRAMBLE_TABLE_SIZE];
+
+#define HashScramble(A, B)                      \
+    *(uint32_t *)(mcumax_hash_scramble_table + \
                   A + (B & 8) + MCUMAX_SQUARE_INVALID * (B & 0b111))
-#define Hash(A)                                                      \
-    HashScramble(step_square_to + A, mcumax.board[step_square_to]) - \
-        HashScramble(scan_square_from + A, scan_piece) -             \
+#define Hash(A)                                                  \
+    HashScramble(square_to + A, mcumax.board[square_to]) -       \
+        HashScramble(square_from + A, scan_piece) -             \
         HashScramble(capture_square + A, capture_piece)
-
-static uint8_t mcumax_scramble_table[MCUMAX_HASH_SCRAMBLE_TABLE_SIZE]; /* hash translation table */
 
 struct HashEntry
 {
@@ -124,7 +132,10 @@ struct HashEntry
     uint8_t depth;
 };
 
-static struct HashEntry mcumax_hash_table[MCUMAX_HASH_TABLE_SIZE];
+_Static_assert(sizeof(struct HashEntry) == 12, "HashEntry layout must match micro-Max");
+
+static struct HashEntry *mcumax_hash_table;
+static bool mcumax_hash_table_owned;
 
 #endif
 
@@ -191,32 +202,44 @@ static int32_t mcumax_search(int32_t alpha,
     beta -= beta <= score;
 
 #ifdef MCUMAX_HASHING_ENABLED
-    // Lookup pos. in hash table
-    struct HashEntry *hash_entry = mcumax_hash_table +
-                                   ((mcumax.hash_key +
-                                     mcumax.current_side * en_passant_square) &
-                                    MCUMAX_HASH_TABLE_SIZE - 1);
+    struct HashEntry *hash_entry = NULL;
 
-    iter_depth = hash_entry->depth;
-    iter_score = hash_entry->score;
-    iter_square_from = hash_entry->square_from;
-    iter_square_to = hash_entry->square_to;
-
-    // Resume at stored depth
-    if ((hash_entry->key2 != mcumax.hash_key2) ||
-        (mode != MCUMAX_INTERNAL_NODE) || // Miss: other pos. or empty
-        !(((iter_score <= alpha) ||
-           (iter_square_from & 0x8)) &&
-          ((iter_score >= beta) ||
-           (iter_square_from & MCUMAX_SQUARE_INVALID)))) // Or window incompatible
+    if (mcumax_hash_table)
     {
-        // Start iteration from scratch
-        iter_depth =
-            iter_square_to = 0;
-    }
+        // Lookup pos. in hash table
+        hash_entry = mcumax_hash_table +
+                     ((mcumax.hash_key +
+                       mcumax.current_side * en_passant_square) &
+                      (MCUMAX_HASH_TABLE_SIZE - 1));
 
-    // Start at best-move hint
-    iter_square_from &= ~MCUMAX_BOARD_MASK;
+        iter_depth = hash_entry->depth;
+        iter_score = hash_entry->score;
+        iter_square_from = hash_entry->square_from;
+        iter_square_to = hash_entry->square_to;
+
+        // Resume at stored depth
+        if ((hash_entry->key2 != mcumax.hash_key2) ||
+            (mode != MCUMAX_INTERNAL_NODE) || // Miss: other pos. or empty
+            !(((iter_score <= alpha) ||
+               (iter_square_from & 0x8)) &&
+              ((iter_score >= beta) ||
+               (iter_square_from & MCUMAX_SQUARE_INVALID)))) // Or window incompatible
+        {
+            // Start iteration from scratch
+            iter_depth =
+                iter_square_to = 0;
+        }
+
+        // Start at best-move hint
+        iter_square_from &= ~MCUMAX_BOARD_MASK;
+    }
+    else
+    {
+        iter_depth =
+            iter_score =
+                iter_square_from =
+                    iter_square_to = 0;
+    }
 
     hash_key = mcumax.hash_key;
     hash_key2 = mcumax.hash_key2;
@@ -478,8 +501,11 @@ static int32_t mcumax_search(int32_t alpha,
 
 #ifdef MCUMAX_HASHING_ENABLED
                                 // Lock game in hash as draw
-                                hash_entry->depth = MCUMAX_DEPTH_MAX;
-                                hash_entry->score = 0;
+                                if (hash_entry)
+                                {
+                                    hash_entry->depth = MCUMAX_DEPTH_MAX;
+                                    hash_entry->score = 0;
+                                }
 #endif
 
                                 // Total captured material
@@ -594,7 +620,7 @@ static int32_t mcumax_search(int32_t alpha,
 
 #ifdef MCUMAX_HASHING_ENABLED
         // Protect game history
-        if (hash_entry->depth < MCUMAX_DEPTH_MAX)
+        if (hash_entry && hash_entry->depth < MCUMAX_DEPTH_MAX)
         {
             hash_entry->key2 = mcumax.hash_key2;
             hash_entry->score = iter_score;
@@ -661,19 +687,7 @@ void mcumax_init()
 #ifdef MCUMAX_HASHING_ENABLED
     mcumax.hash_key = 0;
     mcumax.hash_key2 = 0;
-
-    memset(mcumax_hash_table, 0, sizeof(mcumax_hash_table));
-
-    // for (uint32_t i = MCUMAX_HASH_SCRAMBLE_TABLE_SIZE - 1; i > MCUMAX_BOARD_MASK; i--)
-    //     mcumax_scramble_table[i] = rand() & 0xff;
-
-    srand(1);
-    for (uint32_t i = 0; i < 1035; i++)
-        mcumax_scramble_table[i] =
-            ((rand() & 0xff) << 0) |
-            ((rand() & 0xff) << 8) |
-            ((rand() & 0xff) << 16) |
-            ((rand() & 0xff) << 24);
+    mcumax_hash_clear();
 #endif
 }
 
@@ -948,3 +962,54 @@ void mcumax_stop_search(void)
 {
     mcumax.stop_search = true;
 }
+
+#if MCUMAX_HASH_BITS > 0
+
+size_t mcumax_hash_table_bytes(void)
+{
+    return (size_t)MCUMAX_HASH_TABLE_SIZE * sizeof(struct HashEntry);
+}
+
+bool mcumax_hash_is_active(void)
+{
+    return mcumax_hash_table != NULL;
+}
+
+void mcumax_hash_clear(void)
+{
+    if (mcumax_hash_table)
+        memset(mcumax_hash_table, 0,
+               (size_t)MCUMAX_HASH_TABLE_SIZE * sizeof(struct HashEntry));
+}
+
+bool mcumax_hash_bind(void *table, bool owned)
+{
+    if (mcumax_hash_table_owned && mcumax_hash_table)
+        free(mcumax_hash_table);
+    mcumax_hash_table = (struct HashEntry *)table;
+    mcumax_hash_table_owned = owned && (table != NULL);
+    if (table)
+        mcumax_hash_clear();
+    return table != NULL;
+}
+
+bool mcumax_hash_alloc(void)
+{
+    if (mcumax_hash_table)
+        return true;
+    struct HashEntry *table =
+        (struct HashEntry *)malloc(mcumax_hash_table_bytes());
+    if (!table)
+        return false;
+    return mcumax_hash_bind(table, true);
+}
+
+void mcumax_hash_shutdown(void)
+{
+    if (mcumax_hash_table_owned && mcumax_hash_table)
+        free(mcumax_hash_table);
+    mcumax_hash_table = NULL;
+    mcumax_hash_table_owned = false;
+}
+
+#endif
