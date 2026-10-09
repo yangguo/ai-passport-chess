@@ -94,6 +94,7 @@ static void test_black_ai_opens_and_save_restores(void) {
     reset(); choose_color(true);
     assert(s_game.position.side_to_move == CHESS_WHITE);
     assert(requests == 1 && s_thinking);
+    assert(request.book_enabled);
     assert(request.position.side_to_move == CHESS_WHITE);
     click(BSP_BTN_OK); /* human cannot move for White while AI is thinking */
     assert(s_game.position.side_to_move == CHESS_WHITE);
@@ -107,6 +108,7 @@ static void test_black_ai_opens_and_save_restores(void) {
     s_mode = CHESS_MODE_LOCAL; s_difficulty = CHESS_AI_EASY;
     s_human_color = CHESS_WHITE;
     boot_load(); render_all();
+    assert(!s_book_enabled);
     assert(s_mode == CHESS_MODE_AI && s_difficulty == CHESS_AI_NORMAL);
     assert(rendered.snapshot.bottom == CHESS_BLACK);
     assert(requests == 1); /* loaded Black turn belongs to the human */
@@ -223,11 +225,18 @@ int main(void) {
     handle_command((chess_ui_command){.kind=CHESS_CMD_NEW_GAME}); render_all();
     assert(rendered.screen == CHESS_VIEW_HOME && rendered.nmenu == 2);
     assert(s_game.position.side_to_move == CHESS_BLACK);
-    assert(s_generation == generation);
+    if (s_generation != generation) {
+        fputs("generation changed after new-game prompt\n", stderr);
+        return 1;
+    }
     on_input(BSP_BTN_OK,BSP_BTN_LONG);
     on_input(BSP_BTN_OK,BSP_BTN_CLICK); /* suppressed long-release */
     assert(s_screen == APP_BOARD && s_mode == CHESS_MODE_AI);
-    assert(s_human_color == CHESS_BLACK && s_generation == generation);
+    assert(s_human_color == CHESS_BLACK);
+    if (s_generation != generation) {
+        fputs("generation changed after cancel setup\n", stderr);
+        return 1;
+    }
     handle_command((chess_ui_command){.kind=CHESS_CMD_NEW_GAME}); render_all();
     click(BSP_BTN_DOWN); click(BSP_BTN_OK); /* choose AI, difficulty */
     assert(rendered.nmenu == 3);

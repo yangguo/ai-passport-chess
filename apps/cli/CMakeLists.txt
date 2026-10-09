@@ -28,11 +28,12 @@ add_executable(chess-cli
   ${CORE_DIR}/chess_game.c
   ${STORAGE_DIR}/chess_codec.c
   ${AI_DIR}/chess_ai.c
+  ${AI_DIR}/opening_book.c
   ${ENGINE_DIR}/mcu-max.c
 )
 target_include_directories(chess-cli PRIVATE
   ${CORE_DIR}/include ${STORAGE_DIR}/include
-  ${AI_DIR}/include ${ENGINE_DIR})
+  ${AI_DIR}/include ${AI_DIR} ${ENGINE_DIR})
 
 enable_testing()
 find_program(SH_BIN sh)

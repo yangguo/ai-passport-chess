@@ -32,27 +32,35 @@ set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mcu-max)
 set_source_files_properties(${ENGINE_DIR}/mcu-max.c PROPERTIES
   COMPILE_OPTIONS "-Wno-error")
 
+set(AI_SOURCES ${AI_DIR}/chess_ai.c ${AI_DIR}/opening_book.c ${ENGINE_DIR}/mcu-max.c)
+set(AI_INCLUDES ${CORE_DIR}/include ${AI_DIR}/include ${AI_DIR} ${ENGINE_DIR})
+
 add_executable(test_ai_adapter
   test_ai_adapter.c
   ${CORE_SOURCES}
   ${CORE_DIR}/chess_game.c
-  ${AI_DIR}/chess_ai.c
-  ${ENGINE_DIR}/mcu-max.c
+  ${AI_SOURCES}
 )
-target_include_directories(test_ai_adapter PRIVATE
-  ${CORE_DIR}/include ${AI_DIR}/include ${ENGINE_DIR})
+target_include_directories(test_ai_adapter PRIVATE ${AI_INCLUDES})
 add_test(NAME ai_adapter COMMAND test_ai_adapter)
 
 add_executable(test_ai_worker
   test_ai_worker.c
   ${CORE_SOURCES}
   ${CORE_DIR}/chess_game.c
-  ${AI_DIR}/chess_ai.c
-  ${ENGINE_DIR}/mcu-max.c
+  ${AI_SOURCES}
 )
-target_include_directories(test_ai_worker PRIVATE
-  ${CORE_DIR}/include ${AI_DIR}/include ${ENGINE_DIR})
+target_include_directories(test_ai_worker PRIVATE ${AI_INCLUDES})
 add_test(NAME ai_worker COMMAND test_ai_worker)
+
+add_executable(test_opening_book
+  test_opening_book.c
+  ${CORE_SOURCES}
+  ${CORE_DIR}/chess_game.c
+  ${AI_SOURCES}
+)
+target_include_directories(test_opening_book PRIVATE ${AI_INCLUDES})
+add_test(NAME opening_book COMMAND test_opening_book)
 add_executable(test_ui_model test_ui_model.c ${CORE_SOURCES}
   ${MODEL_DIR}/chess_ui_model.c)
 target_include_directories(test_ui_model PRIVATE
@@ -112,12 +120,12 @@ add_executable(test_app test_app.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c
   ${MODEL_DIR}/chess_ui_model.c ${I18N_DIR}/chess_i18n.c
   ${POWER_DIR}/chess_power.c
   ${STORAGE_DIR}/chess_codec.c ${STORAGE_DIR}/chess_nvs.c
-  ${AI_DIR}/chess_ai.c ${ENGINE_DIR}/mcu-max.c)
+  ${AI_SOURCES})
 target_include_directories(test_app PRIVATE app_stubs
   ../../main ../../components/bsp/include ${CORE_DIR}/include
   ${POWER_DIR}/include
   ${MODEL_DIR}/include ${I18N_DIR}/include ${STORAGE_DIR}/include
-  ${AI_DIR}/include ${ENGINE_DIR})
+  ${AI_INCLUDES})
 add_test(NAME app COMMAND test_app)
 
 add_executable(test_board_layout test_board_layout.c)

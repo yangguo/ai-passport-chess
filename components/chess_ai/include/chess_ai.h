@@ -44,6 +44,8 @@ typedef struct chess_ai_request {
     uint32_t node_max;
     unsigned depth_max;
     uint32_t easy_seed; /* replayable Easy sampling */
+    uint32_t book_seed; /* 0 = main weighted line when book_enabled */
+    bool book_enabled; /* false after save restore; CLI uses internal default */
 } chess_ai_request;
 
 typedef struct chess_ai_job {

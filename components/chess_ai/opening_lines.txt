@@ -1,0 +1,51 @@
+# Hand-written opening lines for the AI adapter book (no Polyglot).
+# Format: <weight> <UCI moves...>  — weight applies to every book move
+# added along that line; at each position the highest weight per UCI move wins.
+# Sources: mainstream opening names only; move sequences are original to this repo.
+# See BOOK_SOURCES.md.
+
+# --- White first moves (seed 0 => e4) ---
+100 e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d3 f8c5
+100 e2e4 e7e5 g1f3 b8c6 f1c4 f8e7
+100 e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4
+80 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4
+80 e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4
+70 e2e4 e7e6 d2d4 d7d5 b1c3 g8f6
+70 e2e4 c7c6 d2d4 d7d5 e4d5 c6d5
+80 d2d4 d7d5 c2c4 e7e6 b1c3 g8f6
+70 d2d4 d7d5 c2c4 d5c4 e2e4
+70 d2d4 g8f6 c2c4 e7e6 b1c3 f8b4
+70 g1f3 d7d5 d2d4 g8f6 c2c4 e7e6
+70 g1f3 g8f6 c2c4 e7e6 b1c3 d7d5
+60 c2c4 e7e5 b1c3 g8f6 g1f3 b8c6
+60 c2c4 g8f6 b1c3 e7e6 g1f3 d7d5
+60 c2c4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4
+
+# --- Black replies (after common White first moves) ---
+100 e2e4 e7e5
+80 e2e4 c7c5
+70 e2e4 e7e6
+60 e2e4 c7c6
+80 d2d4 d7d5
+80 d2d4 g8f6
+60 c2c4 e7e5
+RESP c2c4 80 g8f6
+70 g1f3 g8f6
+RESP g1f3 80 d7d5
+RESP e2e3 80 d7d5
+RESP c2c3 80 d7d5
+
+# --- Black vs d4/c4/Nf3 sidelines (extra depth) ---
+80 d2d4 d7d5 c2c4 d5c4 e2e4 g8f6
+80 d2d4 g8f6 c2c4 e7e6 g1f3 d7d5
+70 g1f3 d7d5 d2d4 g8f6 c2c4 e7e6
+RESP c2c4 70 e7e5 g1f3 g8f6 b1c3 f8b4
+
+# --- After 1.e4 e5 2.Nf3 Nc6 (White) ---
+100 e2e4 e7e5 g1f3 b8c6 f1c4
+100 e2e4 e7e5 g1f3 b8c6 f1b5
+80 e2e4 e7e5 g1f3 b8c6 d2d4
+
+# --- After 1.e4 e5 2.Nf3 (Black) ---
+100 e2e4 e7e5 g1f3 b8c6
+80 e2e4 e7e5 g1f3 g8f6

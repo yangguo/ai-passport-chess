@@ -77,6 +77,7 @@ static const char *level_name(chess_ai_level level);
 static void after_move_applied(chess_move m);
 static void feed_model_moves(void);
 static void maybe_request_ai(void);
+static uint64_t now_ms(void);
 /* AI owns the side opposite the saved human color. */
 static uint8_t s_mode;
 static chess_ai_level s_difficulty;
@@ -86,6 +87,8 @@ static bool s_thinking;
 static bool s_cancel_await;
 static uint64_t s_cancel_at_ms;
 static bool s_cancel_blocked;
+static uint32_t s_book_seed;
+static bool s_book_enabled;
 static unsigned s_home_mode; /* 0 main, 1 difficulty, 2 human color, 3 new-game mode */
 static unsigned s_home_idx;
 static bool s_new_game_setup;
@@ -404,6 +407,8 @@ static void start_ai_game(chess_ai_level level, chess_color human_color) {
     s_mode = CHESS_MODE_AI;
     s_difficulty = level;
     s_human_color = human_color;
+    s_book_enabled = true;
+    s_book_seed = (uint32_t)(now_ms() ^ (uint32_t)(s_generation * 2654435761u));
     ESP_LOGI(TAG, "AI game human=%s level=%u",
              human_color == CHESS_WHITE ? "white" : "black", (unsigned)level);
     persist_game();
@@ -447,6 +452,8 @@ static void maybe_request_ai(void) {
     chess_ai_level_budgets(s_difficulty, &req.deadline_ms, &req.node_max,
                            &req.depth_max);
     req.easy_seed = (uint32_t)(s_generation * 2654435761u);
+    req.book_seed = s_book_seed;
+    req.book_enabled = s_book_enabled;
     if (!chess_ai_task_request(&req)) {
         return;
     }
@@ -655,6 +662,7 @@ static void boot_load(void) {
                                                 : CHESS_MODE_LOCAL;
         s_human_color = (chess_color)save->human_color;
         s_difficulty = (chess_ai_level)save->settings.difficulty;
+        s_book_enabled = false;
         s_generation++;
         feed_model_moves();
         if (chess_game_status(&s_game) != CHESS_STATUS_ONGOING) {
@@ -855,6 +863,7 @@ static void on_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
             s_mode = save->mode;
             s_human_color = (chess_color)save->human_color;
             s_difficulty = (chess_ai_level)save->settings.difficulty;
+            s_book_enabled = false;
             s_generation++;
             feed_model_moves();
             s_screen = APP_BOARD;

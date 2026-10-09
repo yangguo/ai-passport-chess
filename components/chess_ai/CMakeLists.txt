@@ -1,7 +1,9 @@
 idf_component_register(
     SRCS "chess_ai.c"
+         "opening_book.c"
          "../../third_party/mcu-max/mcu-max.c"
     INCLUDE_DIRS "include"
+                 "."
                  "../../third_party/mcu-max"
     REQUIRES chess_core
 )
