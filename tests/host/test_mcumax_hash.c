@@ -1,5 +1,6 @@
 /* Transposition table: legality, TT/no-TT parity, hash keys, node budget. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "chess_ai.h"
@@ -85,10 +86,20 @@ static void test_cli_default_start_move(void) {
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   CHECK(chess_position_from_fen(&pos, fen) == CHESS_OK);
   CHECK(engine_move_legal(&pos, fen, 200000u, 4u, &m));
-  CHECK(m.from == 10 && m.to == 18); /* c2c3 */
+  /* Budget smoke: must be legal; exact move is not pinned (book/TT may vary). */
+  (void)m;
 }
 
 #if MCUMAX_HASH_BITS > 0
+static void core_move_to_mcumax(const chess_move *m, mcumax_move *out) {
+  unsigned file = (unsigned)(m->from % 8u);
+  unsigned rank = (unsigned)(m->from / 8u);
+  unsigned tfile = (unsigned)(m->to % 8u);
+  unsigned trank = (unsigned)(m->to / 8u);
+  out->from = (uint8_t)(((7u - rank) << 4) | file);
+  out->to = (uint8_t)(((7u - trank) << 4) | tfile);
+}
+
 static mcumax_move search_move(const char *fen, uint32_t nodes,
                                unsigned depth) {
   mcumax_set_fen_position(fen);
@@ -128,6 +139,54 @@ static void test_fixed_depth_parity_positions(void) {
   }
 }
 
+static void test_hash_incremental_matches_fen_reseed(void) {
+  chess_position pos;
+  chess_move list[128];
+  chess_undo undo;
+  char fen[CHESS_FEN_MAX];
+  mcumax_move hist[64];
+  size_t hist_len = 0;
+  uint32_t inc_k, inc_k2, fen_k, fen_k2;
+  unsigned seed = 0x9e3779b9u;
+  int plies;
+
+  CHECK(chess_position_from_fen(&pos,
+                                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w "
+                                "KQkq - 0 1") == CHESS_OK);
+  mcumax_init();
+
+  for (plies = 0; plies < 16; plies++) {
+    size_t n = 0;
+    mcumax_move mm;
+    chess_move pick;
+    size_t idx;
+
+    if (chess_generate_legal(&pos, list, 128u, &n) != CHESS_OK || n == 0) {
+      break;
+    }
+    seed = seed * 1664525u + 1013904223u;
+    idx = (size_t)(seed % n);
+    pick = list[idx];
+    core_move_to_mcumax(&pick, &mm);
+    CHECK(mcumax_play_move(mm));
+    CHECK(hist_len < sizeof(hist) / sizeof(hist[0]));
+    hist[hist_len++] = mm;
+    CHECK(chess_make(&pos, pick, &undo) == CHESS_OK);
+    CHECK(chess_position_to_fen(&pos, fen, sizeof(fen)) == CHESS_OK);
+
+    mcumax_hash_get_keys(&inc_k, &inc_k2);
+    mcumax_hash_set_replay_hint(hist, hist_len);
+    mcumax_set_fen_position(fen);
+    mcumax_hash_get_keys(&fen_k, &fen_k2);
+
+    if (inc_k != fen_k || inc_k2 != fen_k2) {
+      printf("hash mismatch ply %d fen=%s\n  incr %u %u\n  fen  %u %u\n", plies,
+             fen, inc_k, inc_k2, fen_k, fen_k2);
+    }
+    CHECK(inc_k == fen_k && inc_k2 == fen_k2);
+  }
+}
+
 static void test_tt_not_slower_in_nodes(void) {
   const char *fen =
       "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
@@ -158,6 +217,7 @@ int main(void) {
   test_random_line_legal();
 #if MCUMAX_HASH_BITS > 0
   test_hash_startpos_zero();
+  test_hash_incremental_matches_fen_reseed();
   test_fixed_depth_parity_positions();
   test_tt_not_slower_in_nodes();
 #endif

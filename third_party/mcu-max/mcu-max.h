@@ -79,6 +79,9 @@ void mcumax_set_fen_position(const char *value);
  */
 mcumax_piece mcumax_get_piece(mcumax_square square);
 
+/** Raw board square byte (includes color / moved flags); test/diagnostics. */
+uint8_t mcumax_get_board_byte(mcumax_square square);
+
 /**
  * @brief Returns the current side.
  */
@@ -133,6 +136,21 @@ bool mcumax_hash_alloc(void);
 void mcumax_hash_shutdown(void);
 /** Piece-only Zobrist keys for the current board (testing/diagnostics). */
 void mcumax_hash_get_keys(uint32_t *key, uint32_t *key2);
+
+struct mcumax_hash_stats {
+    uint64_t probes;
+    uint64_t key_hits;
+    uint64_t cutoffs;
+    uint64_t stores;
+    uint64_t replace_deeper_lost;
+};
+
+void mcumax_hash_reset_stats(void);
+void mcumax_hash_get_stats(struct mcumax_hash_stats *out);
+/** Replay moves from the internal start position to rebuild hash keys. */
+bool mcumax_hash_sync_by_replay(const mcumax_move *moves, size_t move_count);
+/** Optional main-line replay hint consumed on the next set_fen hash sync. */
+void mcumax_hash_set_replay_hint(const mcumax_move *moves, size_t move_count);
 #endif
 
 /** Nodes consumed by the last search (reset at search start). */

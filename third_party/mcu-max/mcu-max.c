@@ -109,6 +109,9 @@ static const int8_t mcumax_board_setup[] = {
     MCUMAX_ROOK,
 };
 
+static uint8_t mcumax_start_board[sizeof(mcumax.board)];
+static bool mcumax_start_board_ready;
+
 #if MCUMAX_HASH_BITS > 0
 
 #define MCUMAX_HASH_SCRAMBLE_TABLE_SIZE 1035
@@ -137,47 +140,149 @@ _Static_assert(sizeof(struct HashEntry) == 12, "HashEntry layout must match micr
 static struct HashEntry *mcumax_hash_table;
 static bool mcumax_hash_table_owned;
 
-static uint32_t mcumax_hash_start_key;
-static uint32_t mcumax_hash_start_key2;
-static bool mcumax_hash_start_calibrated;
+static struct mcumax_hash_stats mcumax_hash_stats;
 
-static void mcumax_hash_sum_board(uint32_t *key, uint32_t *key2)
+static const mcumax_move *mcumax_hash_replay_hint;
+static size_t mcumax_hash_replay_hint_count;
+
+static void mcumax_apply_moved_flags_from_layout(void)
 {
-    uint32_t k = 0;
-    uint32_t k2 = 0;
-
     for (uint8_t square = 0; square < 0x80; square++)
     {
         if (square & MCUMAX_BOARD_MASK)
             continue;
 
         uint8_t piece = mcumax.board[square];
-        k += HashScramble(square, piece);
-        k2 += HashScramble(square + 8, piece);
+        uint8_t start = mcumax_start_board[square];
+
+        if (!piece)
+            continue;
+
+        if (piece != start)
+            mcumax.board[square] = piece | MCUMAX_PIECE_MOVED;
+        else
+            mcumax.board[square] = piece & (uint8_t)~MCUMAX_PIECE_MOVED;
+    }
+}
+
+struct mcumax_snapshot
+{
+    uint8_t board[sizeof(mcumax.board)];
+    uint8_t current_side;
+    uint8_t en_passant_square;
+    int32_t score;
+    int32_t non_pawn_material;
+#ifdef MCUMAX_HASHING_ENABLED
+    uint32_t hash_key;
+    uint32_t hash_key2;
+#endif
+};
+
+static void mcumax_snapshot_save(struct mcumax_snapshot *snap)
+{
+    memcpy(snap->board, mcumax.board, sizeof(snap->board));
+    snap->current_side = mcumax.current_side;
+    snap->en_passant_square = mcumax.en_passant_square;
+    snap->score = mcumax.score;
+    snap->non_pawn_material = mcumax.non_pawn_material;
+#ifdef MCUMAX_HASHING_ENABLED
+    snap->hash_key = mcumax.hash_key;
+    snap->hash_key2 = mcumax.hash_key2;
+#endif
+}
+
+static void mcumax_snapshot_restore(const struct mcumax_snapshot *snap)
+{
+    memcpy(mcumax.board, snap->board, sizeof(mcumax.board));
+    mcumax.current_side = snap->current_side;
+    mcumax.en_passant_square = snap->en_passant_square;
+    mcumax.score = snap->score;
+    mcumax.non_pawn_material = snap->non_pawn_material;
+#ifdef MCUMAX_HASHING_ENABLED
+    mcumax.hash_key = snap->hash_key;
+    mcumax.hash_key2 = snap->hash_key2;
+#endif
+}
+
+static bool mcumax_snapshot_matches_target(const struct mcumax_snapshot *target)
+{
+    if (mcumax.current_side != target->current_side ||
+        mcumax.en_passant_square != target->en_passant_square)
+        return false;
+
+    for (uint8_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+        if (mcumax.board[square] != target->board[square])
+            return false;
     }
 
-    *key = k;
-    *key2 = k2;
+    return true;
 }
 
-static void mcumax_hash_calibrate_start(void)
+static void mcumax_hash_sync_after_fen(void)
 {
-    if (mcumax_hash_start_calibrated)
+    bool at_start = true;
+
+    for (uint8_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+        if (mcumax.board[square] != mcumax_start_board[square])
+        {
+            at_start = false;
+            break;
+        }
+    }
+
+    if (at_start && mcumax.current_side == MCUMAX_BOARD_WHITE &&
+        mcumax.en_passant_square == MCUMAX_SQUARE_INVALID)
+    {
+        mcumax.hash_key = 0;
+        mcumax.hash_key2 = 0;
         return;
+    }
 
-    mcumax_hash_sum_board(&mcumax_hash_start_key, &mcumax_hash_start_key2);
-    mcumax_hash_start_calibrated = true;
+    /* Without a main-line replay hint, incremental keys are unknown; zero is
+     * safe (search rebuilds keys along the current path). */
+    mcumax.hash_key = 0;
+    mcumax.hash_key2 = 0;
 }
 
-static void mcumax_hash_reseed_from_board(void)
+void mcumax_hash_set_replay_hint(const mcumax_move *moves, size_t move_count)
 {
-    uint32_t key;
-    uint32_t key2;
+    mcumax_hash_replay_hint = moves;
+    mcumax_hash_replay_hint_count = move_count;
+}
 
-    mcumax_hash_calibrate_start();
-    mcumax_hash_sum_board(&key, &key2);
-    mcumax.hash_key = key - mcumax_hash_start_key;
-    mcumax.hash_key2 = key2 - mcumax_hash_start_key2;
+bool mcumax_hash_sync_by_replay(const mcumax_move *moves, size_t move_count)
+{
+    struct mcumax_snapshot target;
+    size_t i;
+
+    if (moves == NULL || move_count == 0)
+        return false;
+
+    mcumax_snapshot_save(&target);
+    mcumax_init();
+
+    for (i = 0; i < move_count; i++)
+    {
+        if (!mcumax_play_move(moves[i]))
+        {
+            mcumax_snapshot_restore(&target);
+            return false;
+        }
+    }
+
+    if (!mcumax_snapshot_matches_target(&target))
+    {
+        mcumax_snapshot_restore(&target);
+        return false;
+    }
+
+    return true;
 }
 
 #endif
@@ -249,16 +354,23 @@ static int32_t mcumax_search(int32_t alpha,
 
     if (mcumax_hash_table)
     {
+        bool tt_cutoff = false;
+
         // Lookup pos. in hash table
         hash_entry = mcumax_hash_table +
                      ((mcumax.hash_key +
                        mcumax.current_side * en_passant_square) &
                       (MCUMAX_HASH_TABLE_SIZE - 1));
 
+        mcumax_hash_stats.probes++;
+
         iter_depth = hash_entry->depth;
         iter_score = hash_entry->score;
         iter_square_from = hash_entry->square_from;
         iter_square_to = hash_entry->square_to;
+
+        if (hash_entry->key2 == mcumax.hash_key2)
+            mcumax_hash_stats.key_hits++;
 
         // Resume at stored depth
         if ((hash_entry->key2 != mcumax.hash_key2) ||
@@ -272,9 +384,16 @@ static int32_t mcumax_search(int32_t alpha,
             iter_depth =
                 iter_square_to = 0;
         }
+        else
+        {
+            tt_cutoff = true;
+            mcumax_hash_stats.cutoffs++;
+        }
 
         // Start at best-move hint
         iter_square_from &= ~MCUMAX_BOARD_MASK;
+
+        (void)tt_cutoff;
     }
     else
     {
@@ -665,6 +784,12 @@ static int32_t mcumax_search(int32_t alpha,
         // Protect game history
         if (hash_entry && hash_entry->depth < MCUMAX_DEPTH_MAX)
         {
+            if (hash_entry->key2 == mcumax.hash_key2 &&
+                hash_entry->depth > iter_depth &&
+                hash_entry->depth < MCUMAX_DEPTH_MAX)
+                mcumax_hash_stats.replace_deeper_lost++;
+
+            mcumax_hash_stats.stores++;
             hash_entry->key2 = mcumax.hash_key2;
             hash_entry->score = iter_score;
             hash_entry->depth = iter_depth;
@@ -711,6 +836,12 @@ void mcumax_init()
         for (uint32_t y = 0; y < 8; y++)
             mcumax.board[16 * y + x + 8] = (x - 4) * (x - 4) + (y - 4) * (y - 3);
     }
+
+    if (!mcumax_start_board_ready)
+    {
+        memcpy(mcumax_start_board, mcumax.board, sizeof(mcumax_start_board));
+        mcumax_start_board_ready = true;
+    }
     mcumax.current_side = MCUMAX_BOARD_WHITE;
 
     mcumax.score = 0;
@@ -728,7 +859,6 @@ void mcumax_init()
     mcumax.user_data = NULL;
 
 #ifdef MCUMAX_HASHING_ENABLED
-    mcumax_hash_calibrate_start();
     mcumax.hash_key = 0;
     mcumax.hash_key2 = 0;
     mcumax_hash_clear();
@@ -740,7 +870,9 @@ static mcumax_square mcumax_set_piece(mcumax_square square, mcumax_piece piece)
     if (square & MCUMAX_BOARD_MASK)
         return square;
 
-    mcumax.board[square] = piece ? (piece | MCUMAX_PIECE_MOVED) : piece;
+    /* Do not set MCUMAX_PIECE_MOVED here: virginity comes from init layout,
+     * castling-field parsing, and move execution (matches incremental hash). */
+    mcumax.board[square] = piece;
 
     return square + 1;
 }
@@ -751,6 +883,14 @@ mcumax_piece mcumax_get_piece(mcumax_square square)
         return MCUMAX_EMPTY;
 
     return (mcumax.board[square] & 0xf) ^ MCUMAX_BLACK;
+}
+
+uint8_t mcumax_get_board_byte(mcumax_square square)
+{
+    if (square & MCUMAX_BOARD_MASK)
+        return MCUMAX_EMPTY;
+
+    return mcumax.board[square];
 }
 
 void mcumax_set_fen_position(const char *fen_string)
@@ -939,7 +1079,20 @@ void mcumax_set_fen_position(const char *fen_string)
     }
 
 #ifdef MCUMAX_HASHING_ENABLED
-    mcumax_hash_reseed_from_board();
+    mcumax_apply_moved_flags_from_layout();
+    if (mcumax_hash_replay_hint_count > 0 &&
+        mcumax_hash_sync_by_replay(mcumax_hash_replay_hint,
+                                   mcumax_hash_replay_hint_count))
+    {
+        mcumax_hash_replay_hint = NULL;
+        mcumax_hash_replay_hint_count = 0;
+    }
+    else
+    {
+        mcumax_hash_replay_hint = NULL;
+        mcumax_hash_replay_hint_count = 0;
+        mcumax_hash_sync_after_fen();
+    }
 #endif
 }
 
@@ -962,6 +1115,10 @@ static int32_t mcumax_start_search(enum mcumax_mode mode,
 
     mcumax.stop_search = false;
     mcumax.completed_move = MCUMAX_MOVE_INVALID;
+
+#ifdef MCUMAX_HASHING_ENABLED
+    mcumax_hash_reset_stats();
+#endif
 
     return mcumax_search(-MCUMAX_SCORE_MAX,
                          MCUMAX_SCORE_MAX,
@@ -997,7 +1154,8 @@ mcumax_move mcumax_search_best_move(uint32_t node_max, uint32_t depth_max)
 
 bool mcumax_play_move(mcumax_move move)
 {
-    return mcumax_start_search(MCUMAX_PLAY_MOVE, move, 0, 0) == MCUMAX_SCORE_MAX;
+    return mcumax_start_search(MCUMAX_PLAY_MOVE, move, MCUMAX_DEPTH_MAX,
+                               UINT32_MAX) == MCUMAX_SCORE_MAX;
 }
 
 void mcumax_set_callback(mcumax_callback callback, void *userdata)
@@ -1024,6 +1182,17 @@ void mcumax_hash_get_keys(uint32_t *key, uint32_t *key2)
         *key = mcumax.hash_key;
     if (key2 != NULL)
         *key2 = mcumax.hash_key2;
+}
+
+void mcumax_hash_reset_stats(void)
+{
+    memset(&mcumax_hash_stats, 0, sizeof(mcumax_hash_stats));
+}
+
+void mcumax_hash_get_stats(struct mcumax_hash_stats *out)
+{
+    if (out != NULL)
+        *out = mcumax_hash_stats;
 }
 
 size_t mcumax_hash_table_bytes(void)

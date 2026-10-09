@@ -1,12 +1,30 @@
 # Transposition table validation (branch `cursor/mcu-max-transposition-table-e483`)
 
-## Root cause fixed
+## Root causes fixed
 
-`mcumax_set_fen_position` reset `hash_key` / `hash_key2` to zero on every call.
-The adapter loads a fresh FEN before each search, so after move one the board no
-longer matched the all-zero Zobrist baseline. TT buckets then mixed unrelated
-positions (weak play and inflated node counts). Reseed keys after FEN parse using
-the micro-Max scramble sum relative to the calibrated internal start layout.
+1. **Zero hash after FEN** — `mcumax_set_fen_position` cleared `hash_key` /
+   `hash_key2` while the adapter reloads FEN every search, so TT buckets mixed
+   unrelated positions.
+2. **FEN virgin flags** — loading pieces with `MCUMAX_PIECE_MOVED` on every
+   square broke board bytes vs incremental play; flags are now inferred from the
+   internal start layout after parse.
+3. **Incremental hash path** — piece-sum “reseed” does not match micro-Max’s
+   per-move `Hash()` / `Hash(8)` updates. Normal play keeps keys via
+   `mcumax_play_move` (one-ply delta in `chess_ai`); cold FEN loads use replay
+   hints or safe zero keys until the search rebuilds along the path.
+
+## TT bounds / mate (audit)
+
+Matches upstream micro-Max: TT cutoffs only on `MCUMAX_INTERNAL_NODE` with
+`key2` match and bound flags in `square_from` (`0x8` / `0x80`); root always
+restarts depth but keeps move hints. Mate scores use the delayed-loss bonus on
+return (`iter_score += iter_score < score`), not separate TT ply storage.
+
+## TT size diagnostic (`artifacts/bench/tt-size-probe.log`)
+
+At 1M nodes / d8 on a midgame FEN, 1024 entries (bits=10) shows higher node
+count and `replace_deeper` than 4096/16384 — consistent with thrashing at the
+device default; default stays **10** (~12 KiB).
 
 ## Host tests (local)
 
