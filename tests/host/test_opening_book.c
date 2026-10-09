@@ -18,6 +18,10 @@ static int failures = 0;
 
 #define START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+static uint8_t sq(char file, unsigned rank) {
+  return (uint8_t)((rank - 1u) * 8u + (unsigned)(file - 'a'));
+}
+
 static bool uci_to_core_move(const chess_position *pos, const char *uci,
                              chess_move *out) {
   unsigned ff;
@@ -74,11 +78,16 @@ static void test_start_seed0_e4(void) {
 static void test_black_vs_e4_not_c6(void) {
   chess_position pos;
   chess_move m;
+  const uint8_t c7 = sq('c', 7u);
+  const uint8_t c6 = sq('c', 6u);
+  uint32_t seed;
   CHECK(chess_position_from_fen(&pos,
                                 "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR "
                                 "b KQkq - 0 1") == CHESS_OK);
-  CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
-  CHECK(!(m.from == 50 && m.to == 34)); /* not ...c6 at seed 0 */
+  for (seed = 0u; seed < 512u; seed++) {
+    CHECK(chess_opening_book_probe(&pos, seed, true, &m));
+    CHECK(!(m.from == c7 && m.to == c6)); /* ...c6 excluded (4-move cap) */
+  }
 }
 
 static void test_black_vs_e4_e5(void) {

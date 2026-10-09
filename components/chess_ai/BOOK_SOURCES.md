@@ -36,13 +36,23 @@ HTTP 429. If the API is unreachable and no valid cache is checked in, the
 script can still fall back to documented ratios in
 `tools/fetch_opening_explorer_cache.py` (not used for the current snapshot).
 
-### …c6 after 1.e4
+### …c6 after 1.e4 (excluded by the four-move cap)
 
-Live explorer data ranks **1…c6** at roughly **9%** of games after **1.e4**
-(fourth among common replies). The book keeps **…c6** as a **low-weight**
-alternative (normalized weight below **…e5**) so `book_seed != 0` can still
-reflect population variety. **`book_seed == 0` always plays the highest-weight
-reply (`…e5`)**; host tests assert that contract.
+The explorer snapshot after **1.e4** (ratings 1600–2200) includes roughly:
+
+| Reply | Share of games |
+|---|---:|
+| …e5 | 30.46% |
+| …c5 | 22.80% |
+| …e6 | 12.04% |
+| …d5 | 10.74% |
+| …c6 | 8.97% |
+
+The generator keeps the top **four** moves by count at each node. After **1.e4**
+that set is **…e5 / …c5 / …e6 / …d5** (normalized weights **100 / 75 / 40 / 35**
+in `opening_book.c`). **…c6 is not in the table** and cannot be played from
+the book at any `book_seed`. Host tests scan many seeds to ensure **…c6** never
+appears; **`book_seed == 0` plays …e5** (highest weight).
 
 Regenerate the book after cache or line-list changes:
 

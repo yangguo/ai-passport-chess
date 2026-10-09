@@ -93,7 +93,7 @@ def curated_for_board(board: chess.Board) -> dict[str, int]:
         return dict(CURATED_ROOT)
     if fen.startswith("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b"):
         return dict(CURATED_AFTER_E4)
-    if fen.startswith("rnbqkbnr/pppppppp/8/8/3PP3/8/PPP2PPP/RNBQKBNR b"):
+    if fen.startswith("rnbqkbnr/pppppppp/8/8/3P4/8/PPP2PPP/RNBQKBNR b"):
         return dict(CURATED_AFTER_D4)
     if fen.startswith("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b"):
         return dict(CURATED_AFTER_NF3)

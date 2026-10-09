@@ -15,7 +15,8 @@
 ## 开局库（adapter）
 
 在 `mcumax_search_best_move` 之前，adapter 用 `chess_position_key` 的 34 字节做
-FNV-1a 64 位哈希，查一张编译进 Flash 的线性表（约 64 个局面、≤4 个加权候选）。
+FNV-1a 64 位哈希，查一张编译进 Flash 的线性表（约 87 个局面、≤4 个加权候选；
+由 Lichess `chess-openings` + opening explorer 快照生成，见 `BOOK_SOURCES.md`）。
 `book_seed == 0` 永远走权重最高的主变（host CLI / `tools/elo_match.py` 默认即 0，无需改 harness）。
 产品新开局在 `start_ai_game` 时生成一次 `book_seed` 并整局保持不变；读档续走视为**已离开开局库**
 （`book_enabled = false`，不改存档 schema）。库着法经 `chess_make` 复验，非法则退回搜索。
