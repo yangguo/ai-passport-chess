@@ -82,7 +82,7 @@ still falls back, and user cancellation never plays a move.
 
 Replaced the shared incremental center weights in the 0x88 board right half
 (`board[square+8]`) with per-piece-type `int8_t` tables in flash (`static
-const`, 7×64 bytes + scale factor `MCUMAX_PST_SCALE=4` applied in lookup as
+const`, 7×64 bytes + scale factor `MCUMAX_PST_SCALE=3` applied in lookup as
 `int32_t` to avoid overflow). Pawn structure, passer/promotion bonuses
 (393–416), castling +50, king freeze (−20), and the completed-iteration
 deadline patch are unchanged.

@@ -103,7 +103,7 @@ static const int8_t mcumax_board_setup[] = {
 /* Piece-square tables (original values; shapes informed by common chess
  * heuristics, not copied from PeSTO/Michniewski/Sunfish). Rank 0 = board
  * rank 8 (mcu-max 0xRF), files a–h. White-oriented; black mirrors rank. */
-#define MCUMAX_PST_SCALE 4
+#define MCUMAX_PST_SCALE 3
 
 enum mcumax_pst_kind
 {
