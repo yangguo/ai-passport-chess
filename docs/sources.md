@@ -16,6 +16,8 @@
 | [Perft Results](https://www.chessprogramming.org/Perft_Results) | benchmark FEN与节点值；非引擎依赖，不复制文章 |
 | [ESP-IDF NVS v5.5.3](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32c3/api-reference/storage/nvs_flash.html) | set_blob/commit、错误、空间与掉电语义 |
 | [AI Passport plays](https://ai-passport.folotoy.cn/plays/) | 社区目标；本次未对所有现有玩法逐项查重 |
+| [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings/tree/a6189a30dc273ccb21fc2536a9a2fefd5592a67a) | `a6189a30…`，CC0 开局名/PGN 线源；`tools/data/chess-openings/` |
+| [Lichess opening explorer](https://explorer.lichess.org/lichess) | 书节点着法权重；快照 `tools/data/opening_explorer_cache.json`（2026-10-09；生成时 API 不可达则用文档化 fallback） |
 
 ## 事实与工程选择
 
