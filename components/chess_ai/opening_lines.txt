@@ -29,9 +29,9 @@
 80 d2d4 d7d5
 80 d2d4 g8f6
 60 c2c4 e7e5
-80 c2c4 g8f6
+RESP c2c4 80 g8f6
 70 g1f3 g8f6
-80 g1f3 d7d5
+RESP g1f3 80 d7d5
 RESP e2e3 80 d7d5
 RESP c2c3 80 d7d5
 
@@ -39,7 +39,7 @@ RESP c2c3 80 d7d5
 80 d2d4 d7d5 c2c4 d5c4 e2e4 g8f6
 80 d2d4 g8f6 c2c4 e7e6 g1f3 d7d5
 70 g1f3 d7d5 d2d4 g8f6 c2c4 e7e6
-70 c2c4 e7e5 g1f3 g8f6 b1c3 f8b4
+RESP c2c4 70 e7e5 g1f3 g8f6 b1c3 f8b4
 
 # --- After 1.e4 e5 2.Nf3 Nc6 (White) ---
 100 e2e4 e7e5 g1f3 b8c6 f1c4

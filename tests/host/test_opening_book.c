@@ -18,6 +18,49 @@ static int failures = 0;
 
 #define START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+static bool uci_to_core_move(const chess_position *pos, const char *uci,
+                             chess_move *out) {
+  unsigned ff;
+  unsigned fr;
+  unsigned tf;
+  unsigned tr;
+  chess_move legal[CHESS_MAX_MOVES];
+  size_t count = 0;
+  size_t i;
+  if (uci == NULL || strlen(uci) < 4u) {
+    return false;
+  }
+  ff = (unsigned)(uci[0] - 'a');
+  fr = (unsigned)(uci[1] - '1');
+  tf = (unsigned)(uci[2] - 'a');
+  tr = (unsigned)(uci[3] - '1');
+  if (ff > 7u || fr > 7u || tf > 7u || tr > 7u) {
+    return false;
+  }
+  out->from = (uint8_t)(fr * 8u + ff);
+  out->to = (uint8_t)(tr * 8u + tf);
+  out->promotion = CHESS_EMPTY;
+  if (chess_generate_legal(pos, legal, CHESS_MAX_MOVES, &count) != CHESS_OK) {
+    return false;
+  }
+  for (i = 0; i < count; i++) {
+    if (legal[i].from == out->from && legal[i].to == out->to &&
+        legal[i].promotion == out->promotion) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool play_uci(chess_position *pos, const char *uci) {
+  chess_move m;
+  chess_undo undo;
+  if (!uci_to_core_move(pos, uci, &m)) {
+    return false;
+  }
+  return chess_make(pos, m, &undo) == CHESS_OK;
+}
+
 static void test_start_seed0_e4(void) {
   chess_position pos;
   chess_move m;
@@ -28,14 +71,14 @@ static void test_start_seed0_e4(void) {
   CHECK(m.from == 12 && m.to == 28);
 }
 
-static void test_black_vs_e4_not_c6(void) {
+static void test_black_vs_e4_e5(void) {
   chess_position pos;
   chess_move m;
   CHECK(chess_position_from_fen(&pos,
                                 "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR "
                                 "b KQkq - 0 1") == CHESS_OK);
   CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
-  CHECK(!(m.from == 50 && m.to == 34)); /* not c7c6 */
+  CHECK(m.from == 52 && m.to == 36); /* e7e5 */
 }
 
 static void test_seed0_two_ply_line(void) {
@@ -55,30 +98,36 @@ static void test_seed_variety(void) {
   chess_move b;
   CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
   CHECK(chess_opening_book_probe(&pos, 0u, true, &a));
-  CHECK(chess_opening_book_probe(&pos, 42u, true, &b));
+  CHECK(chess_opening_book_probe(&pos, 17u, true, &b));
   CHECK(a.from == 12 && a.to == 28);
-  /* Non-zero seed may pick d4/Nf3/c4; at least one alt exists in table. */
-  CHECK(chess_opening_book_position_count() >= 4u);
+  CHECK(b.from == 11 && b.to == 27); /* seed 17: d2d4 */
 }
 
 static void test_transposition(void) {
-  /* 1.e4 c5 2.Nf3 d6 and 1.Nf3 c5 2.e4 d6 share one core key. */
-  const char *fen =
-      "rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3";
+  /* 1.e4 c5 2.Nf3 d6 and 1.Nf3 d6 2.e4 c5 → same key; seed 0 plays d2d4. */
   chess_position a;
   chess_position b;
   chess_move ma;
   chess_move mb;
   uint8_t ka[34];
   uint8_t kb[34];
-  CHECK(chess_position_from_fen(&a, fen) == CHESS_OK);
-  CHECK(chess_position_from_fen(&b, fen) == CHESS_OK);
+  CHECK(chess_position_from_fen(&a, START_FEN) == CHESS_OK);
+  CHECK(chess_position_from_fen(&b, START_FEN) == CHESS_OK);
+  CHECK(play_uci(&a, "e2e4"));
+  CHECK(play_uci(&a, "c7c5"));
+  CHECK(play_uci(&a, "g1f3"));
+  CHECK(play_uci(&a, "d7d6"));
+  CHECK(play_uci(&b, "g1f3"));
+  CHECK(play_uci(&b, "d7d6"));
+  CHECK(play_uci(&b, "e2e4"));
+  CHECK(play_uci(&b, "c7c5"));
   chess_position_key(&a, ka);
   chess_position_key(&b, kb);
   CHECK(memcmp(ka, kb, 34) == 0);
   CHECK(chess_opening_book_probe(&a, 0u, true, &ma));
   CHECK(chess_opening_book_probe(&b, 0u, true, &mb));
-  CHECK(ma.from == mb.from && ma.to == mb.to);
+  CHECK(ma.from == 11 && ma.to == 27);
+  CHECK(mb.from == ma.from && mb.to == ma.to);
 }
 
 static void test_book_miss_uses_search(void) {
@@ -190,24 +239,49 @@ static void test_easy_random_out_of_book(void) {
 static void test_resp_after_e3(void) {
   chess_position pos;
   chess_move m;
-  CHECK(chess_position_from_fen(
-            &pos, "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1") ==
-        CHESS_OK);
+  CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
+  CHECK(play_uci(&pos, "e2e3"));
   CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
   CHECK(m.from == 51 && m.to == 35); /* d7d5 */
 }
 
+static void test_resp_after_c3(void) {
+  chess_position pos;
+  chess_move m;
+  CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
+  CHECK(play_uci(&pos, "c2c3"));
+  CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
+  CHECK(m.from == 51 && m.to == 35); /* d7d5 */
+}
+
+static void test_root_first_move_weights(void) {
+  chess_position pos;
+  chess_move m;
+  CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
+  CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
+  CHECK(m.from == 12 && m.to == 28); /* e4 wins at 100 */
+  CHECK(chess_opening_book_probe(&pos, 17u, true, &m));
+  CHECK(m.from == 11 && m.to == 27); /* d4 at 80 */
+  CHECK(chess_opening_book_probe(&pos, 8u, true, &m));
+  CHECK(m.from == 6 && m.to == 21); /* Nf3 at 70 */
+  CHECK(chess_opening_book_probe(&pos, 1u, true, &m));
+  CHECK(m.from == 10 && m.to == 26); /* c4 at 60 */
+}
+
 int main(void) {
   test_start_seed0_e4();
-  test_black_vs_e4_not_c6();
+  test_black_vs_e4_e5();
   test_seed0_two_ply_line();
   test_seed_variety();
   test_transposition();
+  test_resp_after_e3();
+  test_resp_after_c3();
+  test_root_first_move_weights();
+  /* run_job tests last: mcu-max global state can affect later probes if mixed. */
   test_book_hit_skips_search();
   test_book_miss_uses_search();
   test_easy_no_random_in_book();
   test_easy_random_out_of_book();
-  test_resp_after_e3();
 
   if (failures == 0) {
     printf("PASS: all test_opening_book checks passed (%zu book positions)\n",
