@@ -18,7 +18,7 @@
 
 /* Transposition table size: 2^MCUMAX_HASH_BITS entries (0 = disabled). */
 #ifndef MCUMAX_HASH_BITS
-#define MCUMAX_HASH_BITS 10
+#define MCUMAX_HASH_BITS 0
 #endif
 
 #if MCUMAX_HASH_BITS > 0
@@ -112,6 +112,109 @@ static const int8_t mcumax_board_setup[] = {
 static uint8_t mcumax_start_board[sizeof(mcumax.board)];
 static bool mcumax_start_board_ready;
 
+#define MCUMAX_CASTLE_WK 0x01u
+#define MCUMAX_CASTLE_WQ 0x02u
+#define MCUMAX_CASTLE_BK 0x04u
+#define MCUMAX_CASTLE_BQ 0x08u
+
+static void mcumax_apply_moved_flags_from_layout(void)
+{
+    for (uint8_t square = 0; square < 0x80; square++)
+    {
+        if (square & MCUMAX_BOARD_MASK)
+            continue;
+
+        uint8_t piece = mcumax.board[square];
+        uint8_t start = mcumax_start_board[square];
+
+        if (!piece)
+            continue;
+
+        if (piece != start)
+            mcumax.board[square] = piece | MCUMAX_PIECE_MOVED;
+        else
+            mcumax.board[square] = piece & (uint8_t)~MCUMAX_PIECE_MOVED;
+    }
+}
+
+static void mcumax_mark_square_moved(uint8_t square)
+{
+    if (mcumax.board[square])
+        mcumax.board[square] |= MCUMAX_PIECE_MOVED;
+}
+
+static void mcumax_clear_square_moved(uint8_t square)
+{
+    if (mcumax.board[square])
+        mcumax.board[square] &= (uint8_t)~MCUMAX_PIECE_MOVED;
+}
+
+static bool mcumax_square_is_king(uint8_t square, uint8_t color)
+{
+    uint8_t piece = mcumax.board[square] & (uint8_t)~MCUMAX_PIECE_MOVED;
+
+    return piece == (MCUMAX_KING | color);
+}
+
+static bool mcumax_square_is_rook(uint8_t square, uint8_t color)
+{
+    uint8_t piece = mcumax.board[square] & (uint8_t)~MCUMAX_PIECE_MOVED;
+
+    return piece == (MCUMAX_ROOK | color);
+}
+
+/* FEN castling field: home K/R are virgin only when that side's right is set. */
+static void mcumax_apply_castling_rights(uint8_t rights)
+{
+    if (mcumax_square_is_king(0x74, MCUMAX_BOARD_WHITE))
+    {
+        if ((rights & (MCUMAX_CASTLE_WK | MCUMAX_CASTLE_WQ)) != 0)
+            mcumax_clear_square_moved(0x74);
+        else
+            mcumax_mark_square_moved(0x74);
+    }
+
+    if (mcumax_square_is_rook(0x77, MCUMAX_BOARD_WHITE))
+    {
+        if (rights & MCUMAX_CASTLE_WK)
+            mcumax_clear_square_moved(0x77);
+        else
+            mcumax_mark_square_moved(0x77);
+    }
+
+    if (mcumax_square_is_rook(0x70, MCUMAX_BOARD_WHITE))
+    {
+        if (rights & MCUMAX_CASTLE_WQ)
+            mcumax_clear_square_moved(0x70);
+        else
+            mcumax_mark_square_moved(0x70);
+    }
+
+    if (mcumax_square_is_king(0x04, MCUMAX_BOARD_BLACK))
+    {
+        if ((rights & (MCUMAX_CASTLE_BK | MCUMAX_CASTLE_BQ)) != 0)
+            mcumax_clear_square_moved(0x04);
+        else
+            mcumax_mark_square_moved(0x04);
+    }
+
+    if (mcumax_square_is_rook(0x07, MCUMAX_BOARD_BLACK))
+    {
+        if (rights & MCUMAX_CASTLE_BK)
+            mcumax_clear_square_moved(0x07);
+        else
+            mcumax_mark_square_moved(0x07);
+    }
+
+    if (mcumax_square_is_rook(0x00, MCUMAX_BOARD_BLACK))
+    {
+        if (rights & MCUMAX_CASTLE_BQ)
+            mcumax_clear_square_moved(0x00);
+        else
+            mcumax_mark_square_moved(0x00);
+    }
+}
+
 #if MCUMAX_HASH_BITS > 0
 
 #define MCUMAX_HASH_SCRAMBLE_TABLE_SIZE 1035
@@ -144,26 +247,6 @@ static struct mcumax_hash_stats mcumax_hash_stats;
 
 static const mcumax_move *mcumax_hash_replay_hint;
 static size_t mcumax_hash_replay_hint_count;
-
-static void mcumax_apply_moved_flags_from_layout(void)
-{
-    for (uint8_t square = 0; square < 0x80; square++)
-    {
-        if (square & MCUMAX_BOARD_MASK)
-            continue;
-
-        uint8_t piece = mcumax.board[square];
-        uint8_t start = mcumax_start_board[square];
-
-        if (!piece)
-            continue;
-
-        if (piece != start)
-            mcumax.board[square] = piece | MCUMAX_PIECE_MOVED;
-        else
-            mcumax.board[square] = piece & (uint8_t)~MCUMAX_PIECE_MOVED;
-    }
-}
 
 struct mcumax_snapshot
 {
@@ -899,6 +982,7 @@ void mcumax_set_fen_position(const char *fen_string)
 
     uint32_t field_index = 0;
     uint32_t board_index = 0;
+    uint8_t castle_rights = 0;
 
     char c;
     while ((c = *fen_string++))
@@ -1018,27 +1102,23 @@ void mcumax_set_fen_position(const char *fen_string)
             switch (c)
             {
             case 'K':
-                mcumax.board[0x74] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x77] &= ~MCUMAX_PIECE_MOVED;
-
+                castle_rights |= MCUMAX_CASTLE_WK;
                 break;
 
             case 'Q':
-                mcumax.board[0x74] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x70] &= ~MCUMAX_PIECE_MOVED;
-
+                castle_rights |= MCUMAX_CASTLE_WQ;
                 break;
 
             case 'k':
-                mcumax.board[0x04] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x07] &= ~MCUMAX_PIECE_MOVED;
-
+                castle_rights |= MCUMAX_CASTLE_BK;
                 break;
 
             case 'q':
-                mcumax.board[0x04] &= ~MCUMAX_PIECE_MOVED;
-                mcumax.board[0x00] &= ~MCUMAX_PIECE_MOVED;
+                castle_rights |= MCUMAX_CASTLE_BQ;
+                break;
 
+            case '-':
+                castle_rights = 0;
                 break;
             }
 
@@ -1078,8 +1158,10 @@ void mcumax_set_fen_position(const char *fen_string)
         }
     }
 
-#ifdef MCUMAX_HASHING_ENABLED
     mcumax_apply_moved_flags_from_layout();
+    mcumax_apply_castling_rights(castle_rights);
+
+#ifdef MCUMAX_HASHING_ENABLED
     if (mcumax_hash_replay_hint_count > 0 &&
         mcumax_hash_sync_by_replay(mcumax_hash_replay_hint,
                                    mcumax_hash_replay_hint_count))

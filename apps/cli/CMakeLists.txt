@@ -33,7 +33,7 @@ add_executable(chess-cli
   ${ENGINE_DIR}/mcumax_hash_scramble_table.c
 )
 if(NOT DEFINED MCUMAX_HASH_BITS)
-  set(MCUMAX_HASH_BITS 10)
+  set(MCUMAX_HASH_BITS 12)
 endif()
 target_compile_definitions(chess-cli PRIVATE MCUMAX_HASH_BITS=${MCUMAX_HASH_BITS})
 target_include_directories(chess-cli PRIVATE

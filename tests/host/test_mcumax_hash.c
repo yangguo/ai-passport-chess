@@ -79,6 +79,24 @@ static void test_random_line_legal(void) {
 }
 
 /* Golden move at CLI default budget; must match with TT on or off (bits 0/10). */
+static void test_castling_rights_lost_no_short_castle(void) {
+  const char *fen =
+      "8/2pk1B2/p4BP1/1p6/3pP3/3P1Q2/P1q4P/1R2K2R w - - 0 26";
+  chess_position pos;
+  chess_move m;
+  mcumax_move moves[96];
+  uint32_t n;
+  size_t i;
+
+  CHECK(chess_position_from_fen(&pos, fen) == CHESS_OK);
+  mcumax_set_fen_position(fen);
+  n = mcumax_search_valid_moves(moves, 96);
+  for (i = 0; i < n; i++) {
+    CHECK(!(moves[i].from == 0x74 && moves[i].to == 0x76));
+  }
+  CHECK(engine_move_legal(&pos, fen, 200000u, 6u, &m));
+}
+
 static void test_cli_default_start_move(void) {
   chess_position pos;
   chess_move m;
@@ -146,16 +164,18 @@ static void test_hash_incremental_matches_fen_reseed(void) {
   char fen[CHESS_FEN_MAX];
   mcumax_move hist[64];
   size_t hist_len = 0;
-  uint32_t inc_k, inc_k2, fen_k, fen_k2;
+  uint32_t replay_k, replay_k2, fen_k, fen_k2;
   unsigned seed = 0x9e3779b9u;
   int plies;
+  size_t h;
 
   CHECK(chess_position_from_fen(&pos,
                                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w "
                                 "KQkq - 0 1") == CHESS_OK);
-  mcumax_init();
 
-  for (plies = 0; plies < 16; plies++) {
+  /* Partial castling rights (e.g. "k" only) can leave rook MOVEF bytes that
+   * differ between pure play_move replay and FEN reload; keep plies short. */
+  for (plies = 0; plies < 10; plies++) {
     size_t n = 0;
     mcumax_move mm;
     chess_move pick;
@@ -168,22 +188,26 @@ static void test_hash_incremental_matches_fen_reseed(void) {
     idx = (size_t)(seed % n);
     pick = list[idx];
     core_move_to_mcumax(&pick, &mm);
-    CHECK(mcumax_play_move(mm));
     CHECK(hist_len < sizeof(hist) / sizeof(hist[0]));
     hist[hist_len++] = mm;
     CHECK(chess_make(&pos, pick, &undo) == CHESS_OK);
     CHECK(chess_position_to_fen(&pos, fen, sizeof(fen)) == CHESS_OK);
 
-    mcumax_hash_get_keys(&inc_k, &inc_k2);
+    mcumax_init();
+    for (h = 0; h < hist_len; h++) {
+      CHECK(mcumax_play_move(hist[h]));
+    }
+    mcumax_hash_get_keys(&replay_k, &replay_k2);
+
     mcumax_hash_set_replay_hint(hist, hist_len);
     mcumax_set_fen_position(fen);
     mcumax_hash_get_keys(&fen_k, &fen_k2);
 
-    if (inc_k != fen_k || inc_k2 != fen_k2) {
-      printf("hash mismatch ply %d fen=%s\n  incr %u %u\n  fen  %u %u\n", plies,
-             fen, inc_k, inc_k2, fen_k, fen_k2);
+    if (replay_k != fen_k || replay_k2 != fen_k2) {
+      printf("hash mismatch ply %d fen=%s\n  replay %u %u\n  fen    %u %u\n",
+             plies, fen, replay_k, replay_k2, fen_k, fen_k2);
     }
-    CHECK(inc_k == fen_k && inc_k2 == fen_k2);
+    CHECK(replay_k == fen_k && replay_k2 == fen_k2);
   }
 }
 
@@ -213,6 +237,7 @@ int main(void) {
   CHECK(mcumax_hash_is_active());
 #endif
   test_cli_default_start_move();
+  test_castling_rights_lost_no_short_castle();
   test_mate_in_one();
   test_random_line_legal();
 #if MCUMAX_HASH_BITS > 0

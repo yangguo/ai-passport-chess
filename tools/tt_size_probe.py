@@ -29,7 +29,7 @@ def build_probe(bits):
 
 
 def main():
-    for bits in (10, 12, 14):
+    for bits in (12, 14, 16):
         exe = build_probe(bits)
         out = subprocess.check_output([exe, FEN, "1000000", "8"], text=True)
         print("MCUMAX_HASH_BITS=%d\n%s" % (bits, out.strip()))

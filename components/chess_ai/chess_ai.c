@@ -81,11 +81,9 @@ void chess_ai_engine_init(void) {
 #ifdef ESP_PLATFORM
     size_t free_before =
         (size_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (free_before < need + CHESS_AI_TT_MIN_FREE_HEAP) {
-        ESP_LOGW("chess_ai",
-                 "TT skip: need %u bytes, free %u (min free %u after alloc)",
-                 (unsigned)need, (unsigned)free_before,
-                 (unsigned)CHESS_AI_TT_MIN_FREE_HEAP);
+    if (free_before < need) {
+        ESP_LOGW("chess_ai", "TT skip: need %u bytes, free %u",
+                 (unsigned)need, (unsigned)free_before);
         return;
     }
 #endif
@@ -95,7 +93,21 @@ void chess_ai_engine_init(void) {
 #else
         (void)need;
 #endif
+        return;
     }
+#ifdef ESP_PLATFORM
+    {
+        size_t free_after =
+            (size_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (free_after < CHESS_AI_TT_MIN_FREE_HEAP) {
+            ESP_LOGW("chess_ai",
+                     "TT disabled: %u bytes free after %u-byte table (min %u)",
+                     (unsigned)free_after, (unsigned)need,
+                     (unsigned)CHESS_AI_TT_MIN_FREE_HEAP);
+            mcumax_hash_shutdown();
+        }
+    }
+#endif
 #endif
 }
 

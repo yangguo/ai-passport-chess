@@ -20,16 +20,14 @@
 - Local patch: `mcumax_init` clears interface fields (callback,
   valid-move buffer pointers, stop flag) on every `set_fen` so a
   search cannot leave stale globals for the next adapter call
-- Transposition table: compile-time `MCUMAX_HASH_BITS` (default **10** →
-  1024 entries, ~12 KiB heap on device after `chess_ai_engine_init`).
-  Upstream `MCUMAX_HASHING_ENABLED` without resizing pulled 2^24 entries —
-  never use that on-device. Scramble keys are the deterministic `srand(1)`
-  table in `mcumax_hash_scramble_table.c` (Flash). Table is cleared on
-  every `mcumax_init` / `mcumax_set_fen_position`. After FEN parse, Zobrist
-  keys are reseeded from the board relative to the calibrated start position
-  (upstream left keys at 0, which breaks TT once `set_fen` leaves the
-  standard setup). Firmware skips allocation when free internal heap would
-  fall below 32 KiB after the TT.
+- Transposition table: compile-time `MCUMAX_HASH_BITS` (0 = off; device
+  builds use **12** → 4096 entries, ~48 KiB when allocated). Never use
+  1024 entries (bits=10): host Elo showed large regressions. Upstream
+  `MCUMAX_HASHING_ENABLED` without resizing pulled 2^24 entries — never
+  use that on-device. Scramble keys are in `mcumax_hash_scramble_table.c`
+  (Flash). Table cleared on `mcumax_init`. FEN load sets piece moved flags
+  and castling virginity, then optional hash replay. Firmware allocates only
+  if internal free heap stays ≥ 32 KiB **after** the table is allocated.
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
   adapter converts both ways; FEN goes in verbatim
 - "Compliant with FIDE laws (except for underpromotion)": replies

@@ -1,74 +1,55 @@
 # Transposition table validation (branch `cursor/mcu-max-transposition-table-e483`)
 
-## Root causes fixed
+## Ship decision
 
-1. **Zero hash after FEN** — `mcumax_set_fen_position` cleared `hash_key` /
-   `hash_key2` while the adapter reloads FEN every search, so TT buckets mixed
-   unrelated positions.
-2. **FEN virgin flags** — loading pieces with `MCUMAX_PIECE_MOVED` on every
-   square broke board bytes vs incremental play; flags are now inferred from the
-   internal start layout after parse.
-3. **Incremental hash path** — piece-sum “reseed” does not match micro-Max’s
-   per-move `Hash()` / `Hash(8)` updates. Normal play keeps keys via
-   `mcumax_play_move` (one-ply delta in `chess_ai`); cold FEN loads use replay
-   hints or safe zero keys until the search rebuilds along the path.
+| Component | Verdict |
+|-----------|---------|
+| Move-by-move `chess_ai` sync + FEN virgin/castling fixes | **Ship** (+100..+210 Elo vs main on box; see [elo-report-2026-10-09.md](elo-report-2026-10-09.md)) |
+| TT @ 1024 entries | **Do not ship** (−337..−584 Elo vs correct no-TT) |
+| TT @ 4096+ entries | **Optional** if heap allows (diagnostics level with fixnott; 40-game CIs include 0) |
 
-## TT bounds / mate (audit)
+## Box Elo vs Stockfish 17.1 (authoritative)
 
-Matches upstream micro-Max: TT cutoffs only on `MCUMAX_INTERNAL_NODE` with
-`key2` match and bound flags in `square_from` (`0x8` / `0x80`); root always
-restarts depth but keeps move hints. Mate scores use the delayed-loss bonus on
-return (`iter_score += iter_score < score`), not separate TT ply storage.
+Full tables and methodology: **[elo-report-2026-10-09.md](elo-report-2026-10-09.md)** (local box run, not CI).
 
-## TT size diagnostic (`artifacts/bench/tt-size-probe.log`)
+| setting | TT(1024) − fixnott | fixnott − main |
+|---------|-------------------|----------------|
+| s0-200k | −403 [−484, −323] | +101 [+16, +186] |
+| s3-200k | −337 [−408, −266] | +163 [+103, +222] |
+| s3-1M | −584 [−711, −457] | +208 [+119, +297] |
 
-At 1M nodes / d8 on a midgame FEN, 1024 entries (bits=10) shows higher node
-count and `replace_deeper` than 4096/16384 — consistent with thrashing at the
-device default; default stays **10** (~12 KiB).
+| diag TT size | vs fixnott (40 games) |
+|--------------|------------------------|
+| 4096 (bits=12) | +13..+46 Elo (CIs wide) |
+| 65536 (bits=16) | +22..+123 Elo (CIs wide) |
 
-## Host tests (local)
+## Bugs fixed on branch
+
+1. **Moved flags without TT** — `mcumax_apply_moved_flags_from_layout()` runs after every FEN parse (not only when hashing is on).
+2. **Castling rights** — home K/R virginity follows the FEN castling field; `-` marks K/R moved even on e1/h1 (fixes illegal `e1g1` aborts).
+3. **Hash keys** — incremental `play_move` path in `chess_ai`; replay hint for tests; no 1024-entry default.
+
+## TT sizing (compile-time + device)
+
+| `MCUMAX_HASH_BITS` | Entries | Heap (approx.) |
+|--------------------|---------|----------------|
+| 0 | off | 0 |
+| 12 | 4096 | ~48 KiB |
+| 16 | 65536 | ~768 KiB |
+
+- **Never use 10 (1024)** — thrashes at depth/node budgets used in play.
+- **Firmware** (`components/chess_ai/CMakeLists.txt`): `MCUMAX_HASH_BITS=12`. `chess_ai_engine_init()` allocates only if allocation succeeds **and** internal free heap remains ≥ **32 KiB after** the table (`CHESS_AI_TT_MIN_FREE_HEAP`); otherwise `mcumax_hash_shutdown()` and search runs with TT off.
+- **Host CLI default**: bits=12 (`apps/cli/CMakeLists.txt`); override with `-DMCUMAX_HASH_BITS=…`.
+
+## Host tests
 
 | Check | Result |
-|---|---|
-| `ctest -R mcumax_hash` | PASS |
-| `ctest` (host, sanitizers OFF) | PASS |
-| Host sanitizers (`CHESS_SANITIZERS=ON`) | NOT RUN (ASan runtime missing in cloud VM) |
-| Core perft (`ctest -R perft`) | PASS (unchanged; TT is engine-only) |
-| `tools/compare_tt_moves.py` TT vs no-TT @ 200k/d4 | PASS (4 FENs) |
+|-------|--------|
+| `ctest -R mcumax_hash` | PASS (local, sanitizers OFF) |
+| `ctest -R perft` | PASS |
+| `test_castling_rights_lost_no_short_castle` | FEN from box abort report |
+| CI host + sanitizers | see PR #11 |
 
-## Micro-bench (`artifacts/bench/tt-bench.log`)
+## Acceptance (+30 Elo, no regression)
 
-Opening-book replies dominate start/mid FEN CLI timings (sub-ms). Use host
-`mcumax_get_last_search_nodes()` tests for node parity; see `test_mcumax_hash.c`.
-
-## Elo vs Stockfish 17.1 (`artifacts/elo/`)
-
-Logs and PGNs from `tools/run_tt_elo_suite.sh`. Anchors are lore (skill 0≈800,
-3≈1000); interpret as supportive only.
-
-| Arm | Games | Skill | Budget | Status |
-|---|---:|---:|---|---|
-| no-TT vs SF | 200 | 0 | 200k/d4 | pending |
-| TT vs SF | 200 | 0 | 200k/d4 | pending |
-| no-TT vs SF | 100 | 3 | 200k/d4 | pending |
-| TT vs SF | 100 | 3 | 200k/d4 | pending |
-| no-TT vs SF | 100 | 3 | 1M/d8 | pending |
-| TT vs SF | 100 | 3 | 1M/d8 | pending |
-
-| Smoke TT, skill 3, 1M/d8, n=20 | 4.0/20 | −241 | [−59, −423] |
-| Smoke no-TT, skill 3, 1M/d8, n=20 | 10.0/20 | −0 | [+148, −148] |
-| Smoke TT, skill 0, 200k/d4, n=30 | 25.5/30 | +301 | [+469, +134] |
-| Smoke no-TT, skill 0, 200k/d4, n=30 | 15.5/30 | +12 | [+133, −110] |
-
-Full suite (`run_tt_elo_suite.sh`) running → `artifacts/elo/full-suite.log`.
-
-## Firmware / CI
-
-| Metric | Value |
-|---|---|
-| TT heap (default 1024 entries) | ~12 KiB |
-| ESP-IDF firmware size / RAM | from CI `firmware` job (not re-flashed here) |
-
-## Acceptance (+30 Elo, no significant regression)
-
-Verdict recorded in the draft PR after Elo suite completes.
+**NOT MET** for TT(1024). **MET** for engine integration fixes vs main. TT optional at 4096+ when heap policy allows.
