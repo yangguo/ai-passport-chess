@@ -1,7 +1,7 @@
 # Generated opening lines — do not edit by hand.
 # Source: lichess-org/chess-openings (CC0) + Lichess explorer weights.
 # Regenerate: python3 tools/gen_opening_book.py
-# Cache: tools/data/opening_explorer_cache.json (curated_fallback)
+# Cache: tools/data/opening_explorer_cache.json (lichess_explorer)
 
 100 e2e4 c7c5 c2c3 d7d5 e4d5 d8d5  # B22 Sicilian Defense: Alapin Variation, Barmen Defense
 100 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4  # B50 Sicilian Defense
@@ -35,8 +35,8 @@
 100 e2e4 e7e5 g1f3 b8c6 f1c4 g8f6  # C55 Italian Game: Two Knights Defense
 100 e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1  # C78 Ruy Lopez: Morphy Defense
 100 d2d4 g8f6 c2c4 e7e6 g1f3 b7b6 g2g3  # E15 Queen's Indian Defense: Fianchetto Variation
-RESP c2c4 100 c7c5  # RESP/c2c4 lichess weights
 RESP c2c4 100 e7e5  # RESP/c2c4 lichess weights
+RESP c2c4 100 g8f6  # RESP/c2c4 lichess weights
 RESP g1f3 100 d7d5  # RESP/g1f3 lichess weights
 RESP g1f3 100 g8f6  # RESP/g1f3 lichess weights
 RESP e2e3 100 d7d5  # RESP/e2e3 lichess weights

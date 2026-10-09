@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -36,6 +37,9 @@ from opening_book_lib import (  # noqa: E402
 
 CACHE_PATH = ROOT / "tools/data/opening_explorer_cache.json"
 RATINGS = [1600, 1800, 2000, 2200]
+EXPLORER_URL = os.environ.get(
+    "LICHESS_EXPLORER_URL", "https://explorer.lichess.ovh/lichess"
+)
 
 # Curated mid-rating popularity (games-weighted), used only when API fails.
 # Ratios follow public Lichess opening-explorer lore; not a live snapshot.
@@ -129,7 +133,7 @@ def collect_book_fens() -> list[str]:
     return sorted(fens)
 
 
-def fetch_lichess(fen: str, timeout: float = 20.0) -> dict[str, int] | None:
+def fetch_lichess(fen: str, timeout: float = 20.0, retries: int = 5) -> dict[str, int] | None:
     q = urllib.parse.urlencode(
         {
             "variant": "standard",
@@ -137,17 +141,35 @@ def fetch_lichess(fen: str, timeout: float = 20.0) -> dict[str, int] | None:
             "fen": fen,
         }
     )
-    url = "https://explorer.lichess.org/lichess?" + q
-    req = urllib.request.Request(
-        url,
-        headers={"Accept": "application/json", "User-Agent": "ai-passport-chess-book/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if resp.status != 200:
-                return None
-            data = json.loads(resp.read().decode())
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
+    url = EXPLORER_URL + "?" + q
+    headers = {"Accept": "application/json", "User-Agent": "ai-passport-chess-book/1.0"}
+    token = os.environ.get("LICHESS_API_TOKEN")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    data = None
+    for _attempt in range(retries):
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status != 200:
+                    print("explorer HTTP %d" % resp.status, file=sys.stderr)
+                    return None
+                data = json.loads(resp.read().decode())
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                print("explorer HTTP 429; backing off 60s", file=sys.stderr)
+                time.sleep(60)
+                continue
+            print("explorer HTTP %d" % e.code, file=sys.stderr)
+            return None
+        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
+            print("explorer error: %s" % type(e).__name__, file=sys.stderr)
+            time.sleep(5)
+            continue
+    else:
+        return None
+    if data is None:
         return None
     moves = data.get("moves") or []
     out: dict[str, int] = {}
@@ -163,7 +185,12 @@ def fetch_lichess(fen: str, timeout: float = 20.0) -> dict[str, int] | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=CACHE_PATH)
-    ap.add_argument("--sleep", type=float, default=0.15, help="seconds between API calls")
+    ap.add_argument(
+        "--sleep",
+        type=float,
+        default=1.1,
+        help="seconds between API calls (>=1 req/s limit)",
+    )
     ap.add_argument("--max", type=int, default=0, help="limit FENs (0=all)")
     args = ap.parse_args()
 
@@ -191,9 +218,10 @@ def main() -> int:
         "ratings": RATINGS,
         "api_reachable": api_ok,
         "primary_source": "lichess_explorer" if api_ok else "curated_fallback",
-        "explorer_url": "https://explorer.lichess.org/lichess",
+        "explorer_url": EXPLORER_URL,
         "note": (
-            "Live Lichess opening explorer (lichess DB, mid ratings)."
+            "Real Lichess opening explorer data (lichess DB, ratings 1600-2200), fetched %s."
+            % date.today().isoformat()
             if api_ok
             else "API unreachable from generator host; curated_fallback ratios used."
         ),
