@@ -32,6 +32,11 @@ jobs:
         run: |
           python3 -m pip install -r tools/chess_diff_requirements.txt
           python3 -m unittest tests/test_elo_match.py
+          python3 -m unittest tests/test_opening_fallback.py
+      - name: Opening book validation
+        run: |
+          python3 -m pip install -r tools/chess_diff_requirements.txt
+          python3 tools/validate_opening_book.py
       - name: Host tests with sanitizers
         run: |
           cmake -S tests/host -B build/host -DCHESS_SANITIZERS=ON

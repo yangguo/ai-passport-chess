@@ -44,7 +44,7 @@ codec 用假 NVS backend 模拟 write/commit 前后掉电、bit flip、未知版
 
 AI fake clock 在每次 callback 推进时间；deadline 到达必须停止并返回有效着或明确失败；单独测 CPU yield、取消、转换棋盘方向、引擎非法结果、升变与 underpromotion 局面。真机才能证明实际 deadline 和 watchdog。
 
-开局库 host 测试（`test_opening_book`）：`book_seed == 0` 起始局面为 `e2e4`、对 `e4` 不应默认 `c7c6`、库命中不启动搜索（`callback_count == 0`）、转置同键、Easy 在库内不走 15% 随机、读档路径 `book_enabled` 为 false（`test_app`）。表由 `tools/gen_opening_book.py` 从 `opening_lines.txt` 生成；改线后须重跑生成器并提交 `opening_book.c`。
+开局库 host 测试（`test_opening_book`）：`book_seed == 0` 起始局面为 `e2e4`、对 `e4` 不应默认 `c7c6`、库命中不启动搜索（`callback_count == 0`）、转置同键、Easy 在库内不走 15% 随机、读档路径 `book_enabled` 为 false（`test_app`）。表由 `tools/gen_opening_book.py` 从 Lichess `chess-openings` TSV + `tools/data/opening_explorer_cache.json` 生成；`opening_lines.txt` 为生成物。改线后重跑 `gen_opening_book.py`、`validate_opening_book.py` 并提交 `opening_book.c`。来源见 `components/chess_ai/BOOK_SOURCES.md`。
 
 ## 编译与设备
 

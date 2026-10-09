@@ -18,6 +18,10 @@ static int failures = 0;
 
 #define START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+static uint8_t sq(char file, unsigned rank) {
+  return (uint8_t)((rank - 1u) * 8u + (unsigned)(file - 'a'));
+}
+
 static bool uci_to_core_move(const chess_position *pos, const char *uci,
                              chess_move *out) {
   unsigned ff;
@@ -71,6 +75,21 @@ static void test_start_seed0_e4(void) {
   CHECK(m.from == 12 && m.to == 28);
 }
 
+static void test_black_vs_e4_not_c6(void) {
+  chess_position pos;
+  chess_move m;
+  const uint8_t c7 = sq('c', 7u);
+  const uint8_t c6 = sq('c', 6u);
+  uint32_t seed;
+  CHECK(chess_position_from_fen(&pos,
+                                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR "
+                                "b KQkq - 0 1") == CHESS_OK);
+  for (seed = 0u; seed < 512u; seed++) {
+    CHECK(chess_opening_book_probe(&pos, seed, true, &m));
+    CHECK(!(m.from == c7 && m.to == c6)); /* ...c6 excluded (4-move cap) */
+  }
+}
+
 static void test_black_vs_e4_e5(void) {
   chess_position pos;
   chess_move m;
@@ -98,9 +117,9 @@ static void test_seed_variety(void) {
   chess_move b;
   CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
   CHECK(chess_opening_book_probe(&pos, 0u, true, &a));
-  CHECK(chess_opening_book_probe(&pos, 17u, true, &b));
+  CHECK(chess_opening_book_probe(&pos, 3u, true, &b));
   CHECK(a.from == 12 && a.to == 28);
-  CHECK(b.from == 11 && b.to == 27); /* seed 17: d2d4 */
+  CHECK(b.from == 11 && b.to == 27); /* seed 3: d2d4 (Lichess explorer weights) */
 }
 
 static void test_transposition(void) {
@@ -283,11 +302,11 @@ static void test_search_then_book_probe(void) {
   CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
   CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
   CHECK(m.from == 12 && m.to == 28);
-  CHECK(chess_opening_book_probe(&pos, 17u, true, &m));
+  CHECK(chess_opening_book_probe(&pos, 3u, true, &m));
   CHECK(m.from == 11 && m.to == 27);
   CHECK(chess_opening_book_probe(&pos, 8u, true, &m));
   CHECK(m.from == 6 && m.to == 21);
-  CHECK(chess_opening_book_probe(&pos, 1u, true, &m));
+  CHECK(chess_opening_book_probe(&pos, 39u, true, &m));
   CHECK(m.from == 10 && m.to == 26);
 }
 
@@ -297,12 +316,12 @@ static void test_root_first_move_weights(void) {
   CHECK(chess_position_from_fen(&pos, START_FEN) == CHESS_OK);
   CHECK(chess_opening_book_probe(&pos, 0u, true, &m));
   CHECK(m.from == 12 && m.to == 28); /* e4 wins at 100 */
-  CHECK(chess_opening_book_probe(&pos, 17u, true, &m));
-  CHECK(m.from == 11 && m.to == 27); /* d4 at 80 */
+  CHECK(chess_opening_book_probe(&pos, 3u, true, &m));
+  CHECK(m.from == 11 && m.to == 27); /* d4 */
   CHECK(chess_opening_book_probe(&pos, 8u, true, &m));
-  CHECK(m.from == 6 && m.to == 21); /* Nf3 at 70 */
-  CHECK(chess_opening_book_probe(&pos, 1u, true, &m));
-  CHECK(m.from == 10 && m.to == 26); /* c4 at 60 */
+  CHECK(m.from == 6 && m.to == 21); /* Nf3 */
+  CHECK(chess_opening_book_probe(&pos, 39u, true, &m));
+  CHECK(m.from == 10 && m.to == 26); /* c4 */
 }
 
 static int run_suite(int engine_search_first) {
@@ -315,6 +334,7 @@ static int run_suite(int engine_search_first) {
     test_search_then_book_probe();
   }
   test_start_seed0_e4();
+  test_black_vs_e4_not_c6();
   test_black_vs_e4_e5();
   test_seed0_two_ply_line();
   test_seed_variety();

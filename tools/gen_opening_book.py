@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Generate opening_book.c from opening_lines.txt (host-only; needs python-chess)."""
+"""Generate opening_book.c from Lichess openings + explorer weight cache."""
 from __future__ import annotations
 
 import argparse
 import hashlib
-import re
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 try:
@@ -16,130 +14,31 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+from opening_book_lib import (  # noqa: E402
+    LineSpec,
+    RESP_PREFIXES,
+    build_position_tree,
+    build_table_from_tree,
+    emit_lines_txt,
+    load_chess_openings_rows,
+    load_explorer_cache,
+    scale_weights,
+    select_opening_lines,
+    fen_key,
+)
+
 LINES = ROOT / "components/chess_ai/opening_lines.txt"
 OUT_C = ROOT / "components/chess_ai/opening_book.c"
 OUT_H = ROOT / "components/chess_ai/opening_book.h"
+CACHE_PATH = ROOT / "tools/data/opening_explorer_cache.json"
 
-FNV_OFFSET = 1469598103934665603
-FNV_PRIME = 1099511628211
-
-
-def piece_code(p: chess.Piece | None) -> int:
-    if p is None:
-        return 0
-    base = {chess.PAWN: 1, chess.KNIGHT: 2, chess.BISHOP: 3,
-            chess.ROOK: 4, chess.QUEEN: 5, chess.KING: 6}[p.piece_type]
-    return base + (6 if p.color == chess.BLACK else 0)
+# White first moves allowed at the root (exclude c3 and other junk).
+ROOT_WHITE = {"e2e4", "d2d4", "g1f3", "c2c4"}
 
 
-def has_legal_ep_capture(board: chess.Board) -> bool:
-    if board.ep_square is None:
-        return False
-    for mv in board.generate_legal_moves():
-        if mv.to_square == board.ep_square and board.piece_at(mv.from_square).piece_type == chess.PAWN:
-            return True
-    return False
-
-
-def position_key(board: chess.Board) -> bytes:
-    """34-byte key matching chess_position_key() in chess_game.c."""
-    key = bytearray(34)
-    for i in range(32):
-        lo = piece_code(board.piece_at(2 * i))
-        hi = piece_code(board.piece_at(2 * i + 1))
-        key[i] = (hi << 4) | lo
-    castling = 0
-    if board.has_kingside_castling_rights(chess.WHITE):
-        castling |= 0x01
-    if board.has_queenside_castling_rights(chess.WHITE):
-        castling |= 0x02
-    if board.has_kingside_castling_rights(chess.BLACK):
-        castling |= 0x04
-    if board.has_queenside_castling_rights(chess.BLACK):
-        castling |= 0x08
-    key[32] = castling | (0x10 if board.turn == chess.BLACK else 0)
-    if has_legal_ep_capture(board):
-        key[33] = board.ep_square % 8
-    else:
-        key[33] = 0xFF
-    return bytes(key)
-
-
-def fnv1a64(data: bytes) -> int:
-    h = FNV_OFFSET
-    for b in data:
-        h ^= b
-        h = (h * FNV_PRIME) & 0xFFFFFFFFFFFFFFFF
-    return h
-
-
-def uci_to_move(board: chess.Board, uci: str) -> chess.Move:
-    mv = chess.Move.from_uci(uci)
-    if mv not in board.legal_moves:
-        raise ValueError("illegal move %s in %s" % (uci, board.fen()))
-    return mv
-
-
-def core_square(sq: int) -> int:
-    """python-chess square index matches core a1=0."""
-    return sq
-
-
-class LineSpec:
-    __slots__ = ("weight", "moves", "prefix")
-
-    def __init__(self, weight: int, moves: list[str], prefix: list[str] | None):
-        self.weight = weight
-        self.moves = moves
-        self.prefix = prefix  # opponent-only setup from start (not booked)
-
-
-def parse_lines(path: Path) -> list[LineSpec]:
-    out: list[LineSpec] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        parts = line.split()
-        if parts[0] == "RESP":
-            if len(parts) < 3:
-                raise ValueError("RESP needs prefix and moves: %s" % raw)
-            prefix = [parts[1]]
-            weight = int(parts[2])
-            moves = parts[3:]
-            if not moves:
-                raise ValueError("RESP missing book moves: %s" % raw)
-            out.append(LineSpec(weight, moves, prefix))
-            continue
-        weight = int(parts[0])
-        moves = parts[1:]
-        if not moves:
-            raise ValueError("line missing moves: %s" % raw)
-        out.append(LineSpec(weight, moves, None))
-    return out
-
-
-def build_table(lines: list[LineSpec]) -> dict[int, dict[tuple[int, int], int]]:
-    """key_hash -> {(from,to): weight}"""
-    table: dict[int, dict[tuple[int, int], int]] = defaultdict(dict)
-    board = chess.Board()
-    for spec in lines:
-        board.reset()
-        if spec.prefix:
-            for uci in spec.prefix:
-                board.push(uci_to_move(board, uci))
-        for uci in spec.moves:
-            k = fnv1a64(position_key(board))
-            mv = uci_to_move(board, uci)
-            fr = core_square(mv.from_square)
-            to = core_square(mv.to_square)
-            prev = table[k].get((fr, to), 0)
-            table[k][(fr, to)] = max(prev, spec.weight)
-            board.push(mv)
-    return table
-
-
-def emit_c(table: dict[int, dict[tuple[int, int], int]]) -> None:
+def emit_c(table: dict[int, dict[tuple[int, int], int]], out_c: Path = OUT_C) -> None:
     entries = []
     for kh in sorted(table.keys()):
         moves = table[kh]
@@ -292,7 +191,7 @@ def emit_c(table: dict[int, dict[tuple[int, int], int]]) -> None:
     lines.append("  return 0;")
     lines.append("}")
 
-    OUT_C.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out_c.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     h = """/* Position-keyed opening book (adapter layer). Generated table in opening_book.c. */
 #ifndef OPENING_BOOK_H
@@ -317,22 +216,149 @@ int chess_opening_book_selfcheck(void);
     OUT_H.write_text(h, encoding="utf-8")
 
 
+def add_black_reply_lines(
+    cache: dict[str, dict[str, int]],
+    line_moves: list[list[str]],
+) -> None:
+    """One-ply Black replies to common White first moves."""
+    setups = [
+        (["e2e4"], {"e7e5", "c7c5", "e7e6", "c7c6", "g8f6", "d7d5"}),
+        (["d2d4"], {"d7d5", "g8f6", "e7e6", "f7f5", "c7c5"}),
+        (["g1f3"], {"d7d5", "g8f6", "c7c5", "e7e6"}),
+        (["c2c4"], {"e7e5", "c7c5", "e7e6", "g8f6", "c7c6"}),
+    ]
+    board = chess.Board()
+    for prefix, allowed in setups:
+        board.reset()
+        for uci in prefix:
+            board.push(chess.Move.from_uci(uci))
+        fen = fen_key(board)
+        counts = cache.get(fen, {})
+        picks = scale_weights(counts, allowed)
+        for uci in sorted(picks, key=lambda u: (-picks[u], u)):
+            seq = prefix + [uci]
+            if seq not in line_moves:
+                line_moves.append(seq)
+
+
+def add_resp_continuations(
+    cache: dict[str, dict[str, int]],
+    specs: list[LineSpec],
+) -> None:
+    for tag, prefix in RESP_PREFIXES:
+        board = chess.Board()
+        for uci in prefix:
+            board.push(chess.Move.from_uci(uci))
+        fen = fen_key(board)
+        counts = cache.get(fen, {})
+        legal = {m.uci() for m in board.legal_moves}
+        if prefix[0] in ("e2e3", "c2c3") and "d7d5" in legal:
+            moves = ["d7d5"]
+            w = scale_weights(counts, {"d7d5"}).get("d7d5", 80)
+        elif prefix[0] == "c2c4":
+            allowed = {"e7e5", "g8f6", "c7c5", "e7e6"} & legal
+            weighted = scale_weights(counts, allowed)
+            top = sorted(weighted.items(), key=lambda x: (-x[1], x[0]))[:2]
+            if not top:
+                continue
+            moves = [uci for uci, _w in top]
+            w = top[0][1]
+        else:
+            weighted = scale_weights(counts, legal)
+            top = sorted(weighted.items(), key=lambda x: (-x[1], x[0]))[:2]
+            if not top:
+                continue
+            moves = [uci for uci, _w in top]
+            w = top[0][1]
+        specs.append(
+            LineSpec(w, moves, prefix, "RESP/%s lichess weights" % tag)
+        )
+
+
+def trim_root_white(tree: dict[str, set[str]], cache: dict[str, dict[str, int]]) -> None:
+    board = chess.Board()
+    fen = fen_key(board)
+    children = tree.get(fen, set())
+    filtered = {m for m in children if m in ROOT_WHITE}
+    if filtered:
+        tree[fen] = filtered
+    counts = cache.get(fen, {})
+    tree[fen] = set(scale_weights(counts, tree[fen]).keys())
+
+
+def collect_line_moves(rows_meta: list[tuple[str, str, list[str]]]) -> list[list[str]]:
+    return [moves for _e, _n, moves in rows_meta]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lines", type=Path, default=LINES)
+    ap.add_argument("--cache", type=Path, default=CACHE_PATH)
     ap.add_argument("--check-keys", action="store_true",
                     help="print SHA256 of sorted key list for tests")
+    ap.add_argument("--out-c", type=Path, default=OUT_C,
+                    help="output opening_book.c path (default: shipped file)")
     args = ap.parse_args()
-    parsed = parse_lines(args.lines)
-    table = build_table(parsed)
+
+    if not args.cache.is_file():
+        print("Missing cache %s — run tools/fetch_opening_explorer_cache.py" % args.cache,
+              file=sys.stderr)
+        return 1
+
+    cache, cache_meta = load_explorer_cache(args.cache)
+    rows = load_chess_openings_rows()
+    picked = select_opening_lines(rows)
+    if len(picked) < 20:
+        print("Too few opening lines selected (%d)" % len(picked), file=sys.stderr)
+        return 1
+
+    line_moves = collect_line_moves(picked)
+    add_black_reply_lines(cache, line_moves)
+
+    specs: list[LineSpec] = []
+    for eco, name, moves in picked:
+        specs.append(LineSpec(100, moves, None, "%s %s" % (eco, name)))
+    add_resp_continuations(cache, specs)
+
+    prefixes = [p for _t, p in RESP_PREFIXES]
+    tree = build_position_tree(line_moves, prefixes)
+    trim_root_white(tree, cache)
+
+    # Merge RESP book moves into tree.
+    for spec in specs:
+        if not spec.prefix:
+            continue
+        board = chess.Board()
+        for uci in spec.prefix:
+            board.push(chess.Move.from_uci(uci))
+        node_fen = fen_key(board)
+        for uci in spec.moves:
+            tree[node_fen].add(uci)
+
+    table = build_table_from_tree(tree, cache)
+
     if args.check_keys:
         digest = hashlib.sha256(
             ",".join("%016x" % k for k in sorted(table.keys())).encode()
         ).hexdigest()
         print(digest)
         return 0
-    emit_c(table)
-    print("Wrote %u positions to %s" % (len(table), OUT_C), file=sys.stderr)
+
+    try:
+        cache_path_meta = str(args.cache.relative_to(ROOT))
+    except ValueError:
+        cache_path_meta = str(args.cache)
+    emit_lines_txt(
+        args.lines,
+        specs,
+        {
+            "cache_path": cache_path_meta,
+            "primary_source": cache_meta.get("primary_source"),
+            "snapshot_date": cache_meta.get("snapshot_date"),
+        },
+    )
+    emit_c(table, args.out_c)
+    print("Wrote %u positions to %s" % (len(table), args.out_c), file=sys.stderr)
     return 0
 
 

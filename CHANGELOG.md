@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- **AI:** Seeded opening book in the mcu-max adapter (~64 positions, hand-written
-  lines in `opening_lines.txt`); `book_seed == 0` keeps host Elo harness reproducible.
+- **AI:** Seeded opening book in the mcu-max adapter (~87 positions from Lichess
+  `chess-openings` + explorer weight cache); `book_seed == 0` keeps host Elo
+  harness reproducible. Regenerate via `tools/gen_opening_book.py`.
 
 ## 0.1.0-design — 2026-10-06
 

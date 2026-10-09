@@ -1,51 +1,43 @@
-# Hand-written opening lines for the AI adapter book (no Polyglot).
-# Format: <weight> <UCI moves...>  — weight applies to every book move
-# added along that line; at each position the highest weight per UCI move wins.
-# Sources: mainstream opening names only; move sequences are original to this repo.
-# See BOOK_SOURCES.md.
+# Generated opening lines — do not edit by hand.
+# Source: lichess-org/chess-openings (CC0) + Lichess explorer weights.
+# Regenerate: python3 tools/gen_opening_book.py
+# Cache: tools/data/opening_explorer_cache.json (lichess_explorer)
 
-# --- White first moves (seed 0 => e4) ---
-100 e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d3 f8c5
-100 e2e4 e7e5 g1f3 b8c6 f1c4 f8e7
-100 e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4
-80 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4
-80 e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4
-70 e2e4 e7e6 d2d4 d7d5 b1c3 g8f6
-70 e2e4 c7c6 d2d4 d7d5 e4d5 c6d5
-80 d2d4 d7d5 c2c4 e7e6 b1c3 g8f6
-70 d2d4 d7d5 c2c4 d5c4 e2e4
-70 d2d4 g8f6 c2c4 e7e6 b1c3 f8b4
-70 g1f3 d7d5 d2d4 g8f6 c2c4 e7e6
-70 g1f3 g8f6 c2c4 e7e6 b1c3 d7d5
-60 c2c4 e7e5 b1c3 g8f6 g1f3 b8c6
-60 c2c4 g8f6 b1c3 e7e6 g1f3 d7d5
-60 c2c4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4
-
-# --- Black replies (after common White first moves) ---
-100 e2e4 e7e5
-80 e2e4 c7c5
-70 e2e4 e7e6
-60 e2e4 c7c6
-80 d2d4 d7d5
-80 d2d4 g8f6
-60 c2c4 e7e5
-RESP c2c4 80 g8f6
-70 g1f3 g8f6
-RESP g1f3 80 d7d5
-RESP e2e3 80 d7d5
-RESP c2c3 80 d7d5
-
-# --- Black vs d4/c4/Nf3 sidelines (extra depth) ---
-80 d2d4 d7d5 c2c4 d5c4 e2e4 g8f6
-80 d2d4 g8f6 c2c4 e7e6 g1f3 d7d5
-70 g1f3 d7d5 d2d4 g8f6 c2c4 e7e6
-RESP c2c4 70 e7e5 g1f3 g8f6 b1c3 f8b4
-
-# --- After 1.e4 e5 2.Nf3 Nc6 (White) ---
-100 e2e4 e7e5 g1f3 b8c6 f1c4
-100 e2e4 e7e5 g1f3 b8c6 f1b5
-80 e2e4 e7e5 g1f3 b8c6 d2d4
-
-# --- After 1.e4 e5 2.Nf3 (Black) ---
-100 e2e4 e7e5 g1f3 b8c6
-80 e2e4 e7e5 g1f3 g8f6
+100 e2e4 c7c5 c2c3 d7d5 e4d5 d8d5  # B22 Sicilian Defense: Alapin Variation, Barmen Defense
+100 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4  # B50 Sicilian Defense
+100 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6  # B90 Sicilian Defense: Najdorf Variation
+100 e2e4 c7c5 g1f3 e7e6 d2d4 c5d4  # B40 Sicilian Defense: French Variation, Open
+100 e2e4 e7e6 d2d3 d7d5 b1d2 g8f6 g1f3 b8c6 f1e2  # C00 French Defense: Reversed Philidor Formation
+100 e2e4 e7e6 d2d4 d7d5 b1c3 d5e4  # C10 French Defense: Rubinstein Variation
+100 e2e4 e7e5 g1f3 g8f6 f3e5 d7d6  # C42 Petrov's Defense
+100 e2e4 e7e5 g1f3 b8c6 f1c4 f8c5  # C50 Italian Game: Giuoco Piano
+100 e2e4 e7e5 g1f3 b8c6 f1b5 f8b4  # C60 Ruy Lopez: Alapin Defense
+100 e2e4 e7e5 g1f3 b8c6 f1b5 g8f6  # C65 Ruy Lopez: Berlin Defense
+100 e2e4 e7e5 g1f3 b8c6 f1b5 a7a6  # C70 Ruy Lopez: Morphy Defense
+100 d2d4 d7d5 c1f4 c7c5 e2e4 d5e4  # D00 Queen's Pawn Game: Accelerated London System, Steinitz Countergambit, Morris Countergambit Accepted
+100 d2d4 d7d5 g1f3 e7e6 c1f4 g8f6  # D02 Queen's Pawn Game: London System, with e6
+100 d2d4 g8f6 c2c4 g7g6 f2f3 d7d5  # D70 Neo-Grünfeld Defense: Goglidze Attack
+100 d2d4 g8f6 c2c4 g7g6 b1c3 d7d5  # D80 Grünfeld Defense
+100 d2d4 g8f6 c2c4 e7e6 g2g3 d7d5 f1g2 d5c4 g1f3  # E04 Catalan Opening: Open Defense
+100 d2d4 g8f6 c2c4 e7e6 b1c3 f8b4  # E20 Nimzo-Indian Defense
+100 d2d4 g8f6 c2c4 e7e6 b1c3 f8b4 d1c2  # E32 Nimzo-Indian Defense: Classical Variation
+100 d2d4 g8f6 c2c4 g7g6 g1f3 f8g7 g2g3  # E60 King's Indian Defense: Fianchetto Variation
+100 d2d4 g8f6 c2c4 g7g6 b1c3 f8g7 e2e4 d7d6 g1f3  # E90 King's Indian Defense: Normal Variation, Rare Defenses
+100 e2e4 c7c6 c2c4 d7d5 e4d5 d8d5  # B10 Caro-Kann Defense: Accelerated Panov Attack, Pseudo-Scandinavian
+100 e2e4 c7c6 d2d4 d7d5 e4e5 c6c5  # B12 Caro-Kann Defense: Advance Variation, Botvinnik-Carls Defense
+100 e2e4 c7c6 d2d4 d7d5 b1d2 d5e4 d2e4 c8f5  # B18 Caro-Kann Defense: Classical Variation
+100 d2d4 g8f6 g1f3 g7g6 e2e3 f8g7 f1d3 d7d6  # A48 Indian Defense: Colle System, King's Indian Variation
+100 e2e4 e7e6 d2d4 d7d5 b1c3 g8f6  # C11 French Defense: Classical Variation
+100 e2e4 e7e5 g1f3 g8f6 d2d4 e5d4  # C43 Petrov's Defense: Modern Attack
+100 e2e4 e7e5 g1f3 b8c6 f1e2 g8f6 d2d4  # C44 King's Pawn Game: Tayler Opening
+100 e2e4 e7e5 g1f3 b8c6 b1c3 g8f6  # C47 Four Knights Game
+100 e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6  # C54 Italian Game: Classical Variation
+100 e2e4 e7e5 g1f3 b8c6 f1c4 g8f6  # C55 Italian Game: Two Knights Defense
+100 e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1  # C78 Ruy Lopez: Morphy Defense
+100 d2d4 g8f6 c2c4 e7e6 g1f3 b7b6 g2g3  # E15 Queen's Indian Defense: Fianchetto Variation
+RESP c2c4 100 e7e5  # RESP/c2c4 lichess weights
+RESP c2c4 100 g8f6  # RESP/c2c4 lichess weights
+RESP g1f3 100 d7d5  # RESP/g1f3 lichess weights
+RESP g1f3 100 g8f6  # RESP/g1f3 lichess weights
+RESP e2e3 100 d7d5  # RESP/e2e3 lichess weights
+RESP c2c3 100 d7d5  # RESP/c2c3 lichess weights
