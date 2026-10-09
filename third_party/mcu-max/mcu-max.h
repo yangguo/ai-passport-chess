@@ -121,6 +121,9 @@ void mcumax_set_callback(mcumax_callback callback, void *userdata);
  */
 void mcumax_stop_search(void);
 
+/** Nodes visited and last completed root iteration depth from the latest search. */
+void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth);
+
 #ifdef MCUMAX_EXPOSE_EVAL
 /** Side-to-move PST total from the board (engine units). */
 int32_t mcumax_eval_pst_score(void);

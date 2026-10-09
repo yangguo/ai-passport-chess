@@ -14,11 +14,11 @@
 
 ## 位置分（mcu-max PST）
 
-共用中心权重已换成按棋子类型的 flash `int8` 表（兵/马/象/车/后/王中局与残局），
-走子时仍用 `pst(to)-pst(from)` 增量更新；兵结构、通路兵与升变项（含第 8 行加分）
-未改，避免与第 7 行兵重复计分。表值为本仓库原创，形状参考公开棋理而非复制 PeSTO
-等数据；许可说明见 `third_party/mcu-max/SOURCES.md`。开局库命中时产品路径仍先走库；
-PST 回归在 host 上直接调用 `mcumax_search_best_move`（无库）验证。
+共用中心权重已换成 **PeSTO** 中局/残局 PST（`int8` flash，按 `74/100` 缩放到
+mcu-max 兵值单位），走子增量 `pst(to)-pst(from)`，相位 0–24 与 PeSTO 一致。
+为免双计，已去掉原 pawn 结构/冲兵、易位 +50、王冻结 −20；保留 micro-Max 升变/通路兵
+项。来源与许可见 `third_party/mcu-max/SOURCES.md`。开局库路径不变；无库回归见
+`tests/host/test_pst.c`。
 
 ## 开局库（adapter）
 

@@ -95,9 +95,10 @@ static void test_pst_symmetric(void) {
   int32_t w;
   int32_t b;
 
-  mcumax_set_fen_position("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+  /* Same material; STM flip must negate side-to-move PST total. */
+  mcumax_set_fen_position("4k3/8/8/4N3/4n3/8/8/4K3 w - - 0 1");
   w = mcumax_eval_pst_from_scratch();
-  mcumax_set_fen_position("4k3/8/8/8/8/8/8/4K3 b - - 0 1");
+  mcumax_set_fen_position("4k3/8/8/4N3/4n3/8/8/4K3 b - - 0 1");
   b = mcumax_eval_pst_from_scratch();
   CHECK(w == -b);
 }
