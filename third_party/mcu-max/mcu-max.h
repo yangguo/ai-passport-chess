@@ -156,11 +156,25 @@ uint32_t mcumax_get_last_search_nodes(void);
 void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth);
 
 #ifdef MCUMAX_EXPOSE_EVAL
-/** Side-to-move PST total from the board (engine units). */
+/** Side-to-move PST at this position's own phase (not a frozen search). */
 int32_t mcumax_eval_pst_score(void);
 
-/** Recompute PST from the board (host tests). */
-int32_t mcumax_eval_pst_from_scratch(void);
+/** PeSTO phase 0..24 from non-pawn material on the current board. */
+uint8_t mcumax_eval_pesto_phase(void);
+
+/** One piece's tapered PST. `piece` is a raw board byte (type | color). */
+int32_t mcumax_eval_pst_piece(uint8_t piece, mcumax_square square, uint8_t phase);
+
+/**
+ * Run the search move loop for one move and record the PST delta it adds.
+ * `board_after`, when non-NULL, receives the 0x80 board bytes after the
+ * make (before undo). `promo_type` 0 keeps the engine promotion piece;
+ * 3/5/6/7 forces knight/bishop/rook/queen when the move promotes.
+ * Returns false if search never applies that from/to.
+ */
+bool mcumax_eval_probe_pst_delta(mcumax_square from, mcumax_square to,
+                                 uint8_t promo_type, int32_t *pst_delta,
+                                 uint8_t *board_after);
 #endif
 
 #ifdef __cplusplus
