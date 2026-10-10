@@ -793,7 +793,9 @@ static int32_t mcumax_search(int32_t alpha,
                         // All captures if depth == 2
                         if ((iter_depth - !capture_piece) > 1)
                         {
+#ifdef MCUMAX_EXPOSE_EVAL
                             uint8_t promoted = 0;
+#endif
                             int32_t pst_delta;
 
                             mcumax.board[castling_rook_square] =
@@ -817,9 +819,10 @@ static int32_t mcumax_search(int32_t alpha,
                                             ? (647 - scan_piece_type)
                                             : 2 * (scan_piece & (square_to + 0x10) & 0x20);
 
+#ifdef MCUMAX_EXPOSE_EVAL
                                 if ((square_to + step_vector + 1) & MCUMAX_SQUARE_INVALID)
                                     promoted = 1;
-
+#endif
                                 mcumax.board[square_to] += step_alpha;
                             }
 
