@@ -20,6 +20,16 @@ Usage:
   python3 tools/elo_match.py --cli build/cli/chess-cli \
       --stockfish /opt/homebrew/bin/stockfish \
       --games 10 --skill 5
+
+A node cap is checked between root iterations, so a cheaper eval can
+finish an extra ply inside the same node budget. `--movetime` sends
+`ai movetime <ms>` instead: the CLI's completed-iteration wall-clock
+deadline (the firmware mechanism). Default remains `--nodes`/`--depth`.
+Device budgets are 100, 1500, and 5000 ms.
+
+  python3 tools/elo_match.py --cli build/cli/chess-cli \
+      --stockfish /opt/homebrew/bin/stockfish \
+      --games 10 --skill 5 --movetime 1500
 """
 import argparse
 import math
@@ -157,10 +167,23 @@ def main():
     parser.add_argument("--plies", type=int, default=200)
     parser.add_argument("--nodes", type=int, default=200000)
     parser.add_argument("--depth", type=int, default=4)
+    parser.add_argument(
+        "--movetime",
+        type=int,
+        default=None,
+        help="milliseconds per our move (CLI: ai movetime). "
+        "When set, --nodes and --depth are not sent.",
+    )
     parser.add_argument("--pgn", default=None)
     args = parser.parse_args()
 
-    budget = "ai %d %d" % (args.nodes, args.depth)
+    if args.movetime is not None:
+        if args.movetime <= 0 or args.movetime > 600000:
+            parser.error("--movetime must be 1..600000 milliseconds")
+        budget = "ai movetime %d" % args.movetime
+    else:
+        budget = "ai %d %d" % (args.nodes, args.depth)
+    print("budget: %s" % budget)
     pgn_path = args.pgn
     pgn_file = open(pgn_path, "w") if pgn_path else None
     engine = chess.engine.SimpleEngine.popen_uci(args.stockfish)
