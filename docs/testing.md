@@ -48,6 +48,6 @@ AI fake clock 在每次 callback 推进时间；deadline 到达必须停止并�
 
 ## 编译与设备
 
-host `-Wall -Wextra -Werror`。`CHESS_SANITIZERS=ON` 使用 `-fsanitize=address,undefined,alignment -fno-sanitize-recover=all`，ctest 设置 `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`，任何 UBSan 报告都失败。同一次 host ctest 跑 perft、`MCUMAX_HASH_BITS=12` 的 `mcumax_hash` 和 bits 0 的 `mcumax_hash_off`；CLI ctest 对 TT 开（`chess-cli`）和关（`chess-cli-nott`）各跑一次短搜索。不以 sizeof 相等证明二进制序列化可移植。device test 记录屏幕照片/视频、按钮序列、串口日志、固件 SHA256、heap、最大块、stack 最低水位和搜索 p95。官方模拟器可辅助 UI，但不证明 ADC、NVS掉电、内存或RF实机效果。
+host `-Wall -Wextra -Werror`。`CHESS_SANITIZERS=ON` 使用 `-fsanitize=address,undefined,alignment -fno-sanitize-recover=all`，ctest 设置 `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`，任何 UBSan 报告都失败。同一次 host ctest 跑 perft、`MCUMAX_HASH_BITS=12` 的 `mcumax_hash` 和 bits 0 的 `mcumax_hash_off`；CLI ctest 对 TT 开（`chess-cli`）和关（`chess-cli-nott`）各跑一次短搜索，另有 `ai movetime <ms>`（`cli_movetime` / `cli_movetime_nott`）。不以 sizeof 相等证明二进制序列化可移植。device test 记录屏幕照片/视频、按钮序列、串口日志、固件 SHA256、heap、最大块、stack 最低水位和搜索 p95。官方模拟器可辅助 UI，但不证明 ADC、NVS掉电、内存或RF实机效果。
 
 每次发布在 [验收表](acceptance.md) 填实际结果与证据路径。回归失败必须修规则，禁止跳过特殊走法以使 perft 通过。
