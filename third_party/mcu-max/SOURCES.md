@@ -21,15 +21,21 @@
   valid-move buffer pointers, stop flag) on every `set_fen` so a
   search cannot leave stale globals for the next adapter call
 - Transposition table: compile-time `MCUMAX_HASH_BITS` (0 = off; device
-  builds use **12** → 4096 entries, ~48 KiB when allocated). Never use
-  1024 entries (bits=10): host Elo showed large regressions. Upstream
+  builds use **12** → 4096 entries, **49152 bytes**). Each entry is 12 bytes
+  and naturally aligned (`uint32` key, `int32` score, three `uint8` fields,
+  one explicit pad byte). It is not packed. Never use 1024 entries
+  (bits=10): host Elo showed large regressions. Upstream
   `MCUMAX_HASHING_ENABLED` without resizing pulled 2^24 entries — never
-  use that on-device. Scramble keys are in `mcumax_hash_scramble_table.c`
-  (Flash). Table cleared on every `mcumax_set_fen_position` (`mcumax_init`).
-  FEN load sets piece moved flags and castling virginity; hash keys restart
-  at zero. Firmware allocates 4096 entries only when the largest internal
-  block fits alloc+25%, ≥32 KiB total heap remains after alloc, and largest
-  remaining block ≥16 KiB.
+  use that on-device. Scramble keys live in `mcumax_hash_scramble_table.c`
+  (Flash) as a byte table. The Zobrist step reads 4 bytes with `memcpy`
+  (host) or explicit little-endian byte loads (RISC-V). A `uint32_t`
+  dereference of that table is a misaligned load. Firmware allocates the
+  49152-byte table with `heap_caps_aligned_alloc(8, …, INTERNAL|8BIT)` only
+  when the largest internal block fits alloc+25%, ≥32 KiB total heap remains
+  after alloc, and the largest remaining block is ≥16 KiB. Host `aligned_alloc`
+  uses the same 8-byte alignment. The table is cleared on every
+  `mcumax_set_fen_position` (`mcumax_init`). FEN load sets piece moved flags
+  and castling virginity; hash keys restart at zero.
 - Square code 0xRF with rank 0 = rank 8 (FLIPPED vs our a1=0):
   adapter converts both ways; FEN goes in verbatim
 - "Compliant with FIDE laws (except for underpromotion)": replies

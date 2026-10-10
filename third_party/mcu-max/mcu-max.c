@@ -10,6 +10,8 @@
  * Compliant with FIDE laws (except for underpromotion).
  */
 
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -221,14 +223,46 @@ static void mcumax_apply_castling_rights(uint8_t rights)
 
 extern const uint8_t mcumax_hash_scramble_table[MCUMAX_HASH_SCRAMBLE_TABLE_SIZE];
 
-#define HashScramble(A, B)                      \
-    *(uint32_t *)(mcumax_hash_scramble_table + \
-                  A + (B & 8) + MCUMAX_SQUARE_INVALID * (B & 0b111))
-#define Hash(A)                                                  \
-    HashScramble(square_to + A, mcumax.board[square_to]) -       \
-        HashScramble(square_from + A, scan_piece) -             \
-        HashScramble(capture_square + A, capture_piece)
+/* Index = square + (piece & 8) + 128 * (piece & 7). Squares are not
+ * multiples of 4, so a uint32_t dereference of the byte table is a
+ * misaligned load (UBSan alignment; may trap or emulate on ESP32-C3).
+ * Worst in-range index: 0x77 + Hash(8) + color bit + 128*7 = 1031,
+ * and the 4-byte read ends at index 1034. */
+enum { MCUMAX_HASH_SCRAMBLE_MAX_INDEX = 0x77 + 8 + 8 + 128 * 7 };
+_Static_assert(MCUMAX_HASH_SCRAMBLE_MAX_INDEX + 4 <= MCUMAX_HASH_SCRAMBLE_TABLE_SIZE,
+               "scramble table covers the widest unaligned u32 read");
 
+static uint32_t mcumax_load_u32_unaligned(const uint8_t *p)
+{
+#if defined(__riscv)
+    /* Byte loads stay aligned. volatile stops -mno-strict-align from
+     * folding them back into one lw. Little-endian, same as a native
+     * uint32 load on ESP32-C3. */
+    const volatile uint8_t *b = p;
+    return (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
+           ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+#else
+    uint32_t word;
+    memcpy(&word, p, sizeof word);
+    return word;
+#endif
+}
+
+static uint32_t mcumax_hash_scramble(unsigned square_plus, unsigned piece)
+{
+    size_t index = (size_t)square_plus + (size_t)(piece & 8u) +
+                   (size_t)MCUMAX_SQUARE_INVALID * (size_t)(piece & 7u);
+    return mcumax_load_u32_unaligned(mcumax_hash_scramble_table + index);
+}
+
+#define Hash(A)                                                              \
+    (mcumax_hash_scramble((unsigned)(square_to + (A)),                       \
+                          mcumax.board[square_to]) -                         \
+     mcumax_hash_scramble((unsigned)(square_from + (A)), scan_piece) -       \
+     mcumax_hash_scramble((unsigned)(capture_square + (A)), capture_piece))
+
+/* Naturally aligned. Do not pack: key2 and score must sit on multiples
+ * of 4. The explicit pad keeps the micro-Max 12-byte stride. */
 struct HashEntry
 {
     uint32_t key2;
@@ -236,9 +270,18 @@ struct HashEntry
     uint8_t square_from;
     uint8_t square_to;
     uint8_t depth;
+    uint8_t pad;
 };
 
-_Static_assert(sizeof(struct HashEntry) == 12, "HashEntry layout must match micro-Max");
+_Static_assert(sizeof(struct HashEntry) == 12, "HashEntry stays 12 bytes");
+_Static_assert(_Alignof(struct HashEntry) >= 4, "HashEntry is at least 4-aligned");
+_Static_assert(offsetof(struct HashEntry, key2) % 4 == 0, "key2 is 4-aligned");
+_Static_assert(offsetof(struct HashEntry, score) % 4 == 0, "score is 4-aligned");
+#if MCUMAX_HASH_BITS == 12
+_Static_assert((size_t)MCUMAX_HASH_TABLE_SIZE * sizeof(struct HashEntry) == 49152u,
+               "4096 entries are 48 KiB");
+_Static_assert(49152u <= 64u * 1024u, "4K TT stays within 64 KiB");
+#endif
 
 static struct HashEntry *mcumax_hash_table;
 static bool mcumax_hash_table_owned;
@@ -303,8 +346,10 @@ static int32_t mcumax_search(int32_t alpha,
     uint8_t iter_square_to;
 
 #ifdef MCUMAX_HASHING_ENABLED
-    int32_t hash_key;
-    int32_t hash_key2;
+    /* Snapshots of the uint32 keys. Keep them unsigned so a key above
+     * INT_MAX is not an implementation-defined signed conversion. */
+    uint32_t hash_key;
+    uint32_t hash_key2;
 #endif
 
     uint8_t square_start;
@@ -1189,6 +1234,13 @@ void mcumax_hash_clear(void)
 
 bool mcumax_hash_bind(void *table, bool owned)
 {
+    if (table != NULL &&
+        ((uintptr_t)table % _Alignof(struct HashEntry)) != 0)
+    {
+        if (owned)
+            free(table);
+        return false;
+    }
     if (mcumax_hash_table_owned && mcumax_hash_table)
         free(mcumax_hash_table);
     mcumax_hash_table = (struct HashEntry *)table;
@@ -1200,13 +1252,20 @@ bool mcumax_hash_bind(void *table, bool owned)
 
 bool mcumax_hash_alloc(void)
 {
+    size_t bytes;
+    size_t align = 8;
+    void *block;
     if (mcumax_hash_table)
-        return true;
-    struct HashEntry *table =
-        (struct HashEntry *)malloc(mcumax_hash_table_bytes());
-    if (!table)
+        return ((uintptr_t)mcumax_hash_table % _Alignof(struct HashEntry)) == 0;
+    bytes = mcumax_hash_table_bytes();
+    if (bytes % align != 0)
+        bytes += align - (bytes % align);
+    /* aligned_alloc requires the size to be a multiple of the alignment.
+     * 8 is a multiple of 4 and of sizeof(void*) on 32- and 64-bit hosts. */
+    block = aligned_alloc(align, bytes);
+    if (!block)
         return false;
-    return mcumax_hash_bind(table, true);
+    return mcumax_hash_bind(block, true);
 }
 
 void mcumax_hash_shutdown(void)

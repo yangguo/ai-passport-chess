@@ -8,6 +8,7 @@
 #include "chess_core.h"
 #include "opening_book.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 #ifdef ESP_PLATFORM
@@ -53,14 +54,27 @@ void chess_ai_engine_init(void) {
         }
     }
 #endif
-    if (!mcumax_hash_alloc()) {
 #ifdef ESP_PLATFORM
-        ESP_LOGW("chess_ai", "TT alloc failed (%u bytes)", (unsigned)need);
+    {
+        /* 8-byte alignment is a multiple of the entry's 4-byte requirement.
+         * INTERNAL|8BIT matches the heap gate below. */
+        void *block = heap_caps_aligned_alloc(
+            8, need, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (block == NULL) {
+            ESP_LOGW("chess_ai", "TT alloc failed (%u bytes)", (unsigned)need);
+            return;
+        }
+        if (!mcumax_hash_bind(block, true)) {
+            ESP_LOGW("chess_ai", "TT rejected unaligned block");
+            return;
+        }
+    }
 #else
+    if (!mcumax_hash_alloc()) {
         (void)need;
-#endif
         return;
     }
+#endif
 #ifdef ESP_PLATFORM
     {
         size_t free_after =
