@@ -61,6 +61,17 @@ target_include_directories(test_ai_worker PRIVATE ${AI_INCLUDES})
 chess_ai_target_hash_bits(test_ai_worker 12)
 add_test(NAME ai_worker COMMAND test_ai_worker)
 
+add_executable(test_pst_nbk
+  test_pst_nbk.c
+  ${CORE_SOURCES}
+  ${ENGINE_DIR}/mcu-max.c
+  ${ENGINE_DIR}/mcumax_hash_scramble_table.c
+)
+target_include_directories(test_pst_nbk PRIVATE ${CORE_DIR}/include ${ENGINE_DIR})
+target_compile_definitions(test_pst_nbk PRIVATE MCUMAX_EXPOSE_EVAL)
+chess_ai_target_hash_bits(test_pst_nbk 12)
+add_test(NAME pst_nbk COMMAND test_pst_nbk)
+
 add_executable(test_opening_book
   test_opening_book.c
   ${CORE_SOURCES}
@@ -70,6 +81,9 @@ add_executable(test_opening_book
 target_include_directories(test_opening_book PRIVATE ${AI_INCLUDES})
 chess_ai_target_hash_bits(test_opening_book 12)
 add_test(NAME opening_book COMMAND test_opening_book)
+# Sanitized opening-book search exceeds 600s on GitHub runners after the
+# PST fix (local gcc: 744s). 1500s is CTest's default.
+set_tests_properties(opening_book PROPERTIES TIMEOUT 1500)
 
 add_executable(test_mcumax_hash
   test_mcumax_hash.c

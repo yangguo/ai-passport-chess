@@ -152,6 +152,17 @@ void mcumax_hash_get_stats(struct mcumax_hash_stats *out);
 /** Nodes consumed by the last search (reset at search start). */
 uint32_t mcumax_get_last_search_nodes(void);
 
+void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth);
+
+#ifdef MCUMAX_EXPOSE_EVAL
+int32_t mcumax_eval_nbk_pst_score(void);
+int32_t mcumax_eval_non_pawn_material(void);
+int32_t mcumax_eval_nbk_piece(uint8_t piece, mcumax_square square);
+bool mcumax_eval_probe_nbk_delta(mcumax_square from, mcumax_square to,
+                                 uint8_t promo_type, int32_t *nbk_delta,
+                                 uint8_t *board_after);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
