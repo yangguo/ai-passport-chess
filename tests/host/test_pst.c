@@ -231,6 +231,21 @@ static void check_move_identity(const char *fen, const chess_position *pos,
         failures++;
         return;
       }
+      /* White pawn 0x09 | moved 0x20 = 0x29; + (647-1) wraps to 0xAF.
+         Low 3 bits then become N 0xAB, B 0xAD, R 0xAE, Q 0xAF.
+         Black pawn 0x12 | moved = 0x32; + (647-2) wraps to 0xB7.
+         N 0xB3, B 0xB5, R 0xB6, Q 0xB7. */
+      {
+        uint8_t placed = after[to];
+        uint8_t want = (uint8_t)((side == RAW_WHITE) ? 0xA8u : 0xB0u);
+        want = (uint8_t)(want | promo);
+        if (placed != want) {
+          printf("FAIL promo byte fen %s %u->%u got 0x%02x want 0x%02x\n", fen,
+                 mv.from, mv.to, placed, want);
+          failures++;
+          return;
+        }
+      }
       kind_hits[color][KIND_PROMO]++;
       if (k_promos[i] != CHESS_QUEEN) {
         kind_hits[color][KIND_UNDER]++;
@@ -334,6 +349,87 @@ static void test_opening_without_book(void) {
   CHECK(!(m.from == 50 && m.to == 42)); /* not c7c6 */
 }
 
+/* Upstream PeSTO centipawns (tools/pesto_source.py, a8=0), scaled by the
+ * committed rule round(cp * 52 / 100). The integers below are that
+ * arithmetic written out; this function does not read mcumax_pesto_tables.h
+ * and does not recompute the blend. */
+static void expect_pst(const char *label, uint8_t piece, mcumax_square sq,
+                       uint8_t phase, int32_t want) {
+  int32_t got = mcumax_eval_pst_piece(piece, sq, phase);
+  if (got != want) {
+    printf("FAIL golden %s piece 0x%02x sq 0x%02x phase %u got %d want %d\n",
+           label, piece, sq, phase, (int)got, (int)want);
+    failures++;
+  }
+}
+
+static void test_golden_upstream(void) {
+  const uint8_t wp = (uint8_t)(RAW_WHITE | 1u);
+  const uint8_t bp = (uint8_t)(RAW_BLACK | 2u);
+  const uint8_t wn = (uint8_t)(RAW_WHITE | 3u);
+  const uint8_t bn = (uint8_t)(RAW_BLACK | 3u);
+  const uint8_t wk = (uint8_t)(RAW_WHITE | 4u);
+  const uint8_t bk = (uint8_t)(RAW_BLACK | 4u);
+  const uint8_t wb = (uint8_t)(RAW_WHITE | 5u);
+  const uint8_t bb = (uint8_t)(RAW_BLACK | 5u);
+  const uint8_t wr = (uint8_t)(RAW_WHITE | 6u);
+  const uint8_t br = (uint8_t)(RAW_BLACK | 6u);
+  const uint8_t wq = (uint8_t)(RAW_WHITE | 7u);
+  const uint8_t bq = (uint8_t)(RAW_BLACK | 7u);
+
+  /* Pawn e7 index 12: MG 68 cp * 52 = 3536 → 35; EG 147*52 = 7644 → 76.
+     Pawn e2 index 52: MG -15*52 = -780 → -8; EG 13*52 = 676 → 7. */
+  expect_pst("P e7 MG", wp, 0x14, 24, 35);
+  expect_pst("P e7 EG", wp, 0x14, 0, 76);
+  expect_pst("P e2 MG", wp, 0x64, 24, -8);
+  expect_pst("P e2 EG", wp, 0x64, 0, 7);
+  expect_pst("p e2 MG mirror", bp, 0x64, 24, 35);
+  expect_pst("p e7 EG mirror", bp, 0x14, 0, 7);
+
+  /* Knight g1 index 62: MG -19*52 = -988 → -10; EG -50*52 = -2600 → -26.
+     Knight f3 index 45: MG 17*52 = 884 → 9; EG -3*52 = -156 → -2. */
+  expect_pst("N g1 MG", wn, 0x76, 24, -10);
+  expect_pst("N g1 EG", wn, 0x76, 0, -26);
+  expect_pst("N f3 MG", wn, 0x55, 24, 9);
+  expect_pst("N f3 EG", wn, 0x55, 0, -2);
+  expect_pst("n g8 MG mirror", bn, 0x06, 24, -10);
+  expect_pst("n f6 EG mirror", bn, 0x25, 0, -2);
+  /* Phase 16 blend of the scaled f3 knight: (9*16 + -2*8) / 24 = 5. */
+  expect_pst("N f3 phase 16", wn, 0x55, 16, 5);
+
+  /* Bishop c1 index 58: MG -14*52 = -728 → -7; EG -23*52 = -1196 → -12.
+     Bishop c4 index 34: MG 13*52 = 676 → 7; EG 13*52 = 676 → 7. */
+  expect_pst("B c1 MG", wb, 0x72, 24, -7);
+  expect_pst("B c1 EG", wb, 0x72, 0, -12);
+  expect_pst("B c4 MG", wb, 0x42, 24, 7);
+  expect_pst("B c4 EG", wb, 0x42, 0, 7);
+  expect_pst("b c8 MG mirror", bb, 0x02, 24, -7);
+
+  /* Rook on the 7th, a7 index 8: MG 27*52 = 1404 → 14; EG 11*52 = 572 → 6. */
+  expect_pst("R a7 MG", wr, 0x10, 24, 14);
+  expect_pst("R a7 EG", wr, 0x10, 0, 6);
+  expect_pst("r a2 EG mirror", br, 0x60, 0, 6);
+
+  /* Queen d1 index 59: MG 10*52 = 520 → 5; EG -43*52 = -2236 → -22.
+     Queen d4 index 35: MG -10*52 = -520 → -5; EG 47*52 = 2444 → 24. */
+  expect_pst("Q d1 MG", wq, 0x73, 24, 5);
+  expect_pst("Q d1 EG", wq, 0x73, 0, -22);
+  expect_pst("Q d4 MG", wq, 0x43, 24, -5);
+  expect_pst("Q d4 EG", wq, 0x43, 0, 24);
+  expect_pst("q d8 MG mirror", bq, 0x03, 24, 5);
+
+  /* King g1 index 62: MG 24*52 = 1248 → 12; EG -24*52 = -1248 → -12.
+     King e4 index 36: MG -46*52 = -2392 → -24; EG 27*52 = 1404 → 14. */
+  expect_pst("K g1 MG", wk, 0x76, 24, 12);
+  expect_pst("K g1 EG", wk, 0x76, 0, -12);
+  expect_pst("K e4 MG", wk, 0x44, 24, -24);
+  expect_pst("K e4 EG", wk, 0x44, 0, 14);
+  expect_pst("k g8 MG mirror", bk, 0x06, 24, 12);
+  expect_pst("k e5 EG mirror", bk, 0x34, 0, 14);
+  CHECK(mcumax_eval_pst_piece(wk, 0x76, 24) !=
+        mcumax_eval_pst_piece(wk, 0x44, 0));
+}
+
 static void test_orientation(void) {
   /* Phase 0 is pure endgame. e7 is PeSTO a8=0 index 12; e2 is index 52. */
   const uint8_t white_pawn = (uint8_t)(RAW_WHITE | 1u);
@@ -344,8 +440,8 @@ static void test_orientation(void) {
   int32_t black_e7 = mcumax_eval_pst_piece(black_pawn, 0x14, 0);
 
   CHECK(white_e7 > white_e2);
-  CHECK(white_e7 == mcumax_pesto_eg_pawn[12]);
-  CHECK(white_e2 == mcumax_pesto_eg_pawn[52]);
+  CHECK(white_e7 == 76);
+  CHECK(white_e2 == 7);
   CHECK(black_e2 > black_e7);
   CHECK(black_e2 == white_e7);
   CHECK(black_e7 == white_e2);
@@ -396,6 +492,7 @@ static void test_pst_identities(void) {
 }
 
 int main(void) {
+  test_golden_upstream();
   test_orientation();
   test_start_symmetric();
   test_pst_identities();
