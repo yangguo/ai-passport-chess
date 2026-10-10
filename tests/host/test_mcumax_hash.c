@@ -1,4 +1,5 @@
 /* Transposition table: legality, TT/no-TT parity, hash keys, node budget. */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,7 +198,15 @@ static void test_tt_warm_not_slower_than_cold_within_search(void) {
 int main(void) {
   chess_ai_engine_init();
 #if MCUMAX_HASH_BITS > 0
-  CHECK(mcumax_hash_is_active());
+  {
+    unsigned char raw[16];
+    void *misaligned = (void *)((uintptr_t)raw | 1u);
+    CHECK(mcumax_hash_is_active());
+    CHECK(mcumax_hash_table_bytes() == (size_t)(1u << MCUMAX_HASH_BITS) * 12u);
+    CHECK(mcumax_hash_table_bytes() <= 64u * 1024u);
+    CHECK(!mcumax_hash_bind(misaligned, false));
+    CHECK(mcumax_hash_is_active());
+  }
 #endif
   test_cli_default_start_move();
   test_castling_rights_lost_no_short_castle();

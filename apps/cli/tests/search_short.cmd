@@ -1,0 +1,3 @@
+loadfen r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1
+ai 30000 4
+quit

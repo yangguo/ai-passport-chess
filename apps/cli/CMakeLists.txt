@@ -8,8 +8,9 @@ add_compile_options(-Wall -Wextra -Werror)
 
 option(CHESS_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 if(CHESS_SANITIZERS)
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined)
+  # -fno-sanitize-recover=all aborts on the first UBSan/ASan report.
+  add_compile_options(-fsanitize=address,undefined,alignment -fno-sanitize-recover=all -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined,alignment)
 endif()
 
 set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -20,7 +21,11 @@ set(ENGINE_DIR ${ROOT_DIR}/third_party/mcu-max)
 set_source_files_properties(${ENGINE_DIR}/mcu-max.c PROPERTIES
   COMPILE_OPTIONS "-Wno-error")
 
-add_executable(chess-cli
+if(NOT DEFINED MCUMAX_HASH_BITS)
+  set(MCUMAX_HASH_BITS 12)
+endif()
+
+set(CLI_SOURCES
   chess_cli.c
   ${CORE_DIR}/chess_position.c
   ${CORE_DIR}/chess_fen.c
@@ -32,13 +37,19 @@ add_executable(chess-cli
   ${ENGINE_DIR}/mcu-max.c
   ${ENGINE_DIR}/mcumax_hash_scramble_table.c
 )
-if(NOT DEFINED MCUMAX_HASH_BITS)
-  set(MCUMAX_HASH_BITS 12)
-endif()
-target_compile_definitions(chess-cli PRIVATE MCUMAX_HASH_BITS=${MCUMAX_HASH_BITS})
-target_include_directories(chess-cli PRIVATE
-  ${CORE_DIR}/include ${STORAGE_DIR}/include
-  ${AI_DIR}/include ${AI_DIR} ${ENGINE_DIR})
+
+function(add_chess_cli target bits)
+  add_executable(${target} ${CLI_SOURCES})
+  target_compile_definitions(${target} PRIVATE MCUMAX_HASH_BITS=${bits})
+  target_include_directories(${target} PRIVATE
+    ${CORE_DIR}/include ${STORAGE_DIR}/include
+    ${AI_DIR}/include ${AI_DIR} ${ENGINE_DIR})
+endfunction()
+
+# Default CLI keeps the requested table (12 on device and in CI).
+# chess-cli-nott is the strict-sanitizer companion with the TT compiled out.
+add_chess_cli(chess-cli ${MCUMAX_HASH_BITS})
+add_chess_cli(chess-cli-nott 0)
 
 enable_testing()
 find_program(SH_BIN sh)
@@ -70,4 +81,24 @@ if(SH_BIN)
       "engine: " "result: ongoing"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(cli_ai PROPERTIES TIMEOUT 300)
+  # Out of book, so the engine search (and the TT, when compiled in) runs.
+  add_test(NAME cli_search_tt
+    COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
+      ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/search_short.cmd
+      "ok loaded-fen" "engine: "
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  add_test(NAME cli_search_nott
+    COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
+      ./chess-cli-nott ${CMAKE_CURRENT_SOURCE_DIR}/tests/search_short.cmd
+      "ok loaded-fen" "engine: "
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(cli_search_tt cli_search_nott PROPERTIES TIMEOUT 60)
+endif()
+
+if(CHESS_SANITIZERS)
+  get_property(chess_ctest_targets DIRECTORY PROPERTY TESTS)
+  if(chess_ctest_targets)
+    set_tests_properties(${chess_ctest_targets} PROPERTIES
+      ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+  endif()
 endif()

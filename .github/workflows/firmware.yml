@@ -21,6 +21,9 @@ jobs:
   host-gate:
     name: Docs and host tests
     runs-on: ubuntu-latest
+    env:
+      # Halt even if a binary was built without -fno-sanitize-recover.
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,11 +42,15 @@ jobs:
           python3 tools/validate_opening_book.py
       - name: Host tests with sanitizers
         run: |
+          # Strict UBSan (-fno-sanitize-recover=all). ctest includes perft,
+          # mcumax_hash (TT bits 12) and mcumax_hash_off (TT off).
           cmake -S tests/host -B build/host -DCHESS_SANITIZERS=ON
           cmake --build build/host
           ctest --test-dir build/host --output-on-failure
       - name: CLI behavior tests
         run: |
+          # chess-cli is TT bits 12; chess-cli-nott is TT off.
+          # cli_search_tt / cli_search_nott are short out-of-book searches.
           cmake -S apps/cli -B build/cli -DCHESS_SANITIZERS=ON
           cmake --build build/cli
           ctest --test-dir build/cli --output-on-failure

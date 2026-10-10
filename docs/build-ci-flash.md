@@ -27,10 +27,11 @@ idf.py size-components
 ## host/firmware 验证入口
 
 ```sh
-# host 回归，无 IDF 环境也可运行
+# host 回归，无 IDF 环境也可运行。
+# CHESS_SANITIZERS=ON 加 -fno-sanitize-recover=all；UBSan 报告即失败。
 cmake -S tests/host -B build/host -DCHESS_SANITIZERS=ON
 cmake --build build/host
-ctest --test-dir build/host --output-on-failure
+UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ctest --test-dir build/host --output-on-failure
 python3 tools/check_docs.py
 
 # 干净配置、构建、合并、布局检查

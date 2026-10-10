@@ -27,12 +27,12 @@ Main regressed because it marked every FEN piece moved, which disabled castling.
 
 ## TT sizing (compile-time + device)
 
-| `MCUMAX_HASH_BITS` | Entries | Heap (approx.) |
-|--------------------|---------|----------------|
+| `MCUMAX_HASH_BITS` | Entries | Heap |
+|--------------------|---------|------|
 | 0 | off | 0 |
-| 12 | 4096 | ~48 KiB |
+| 12 | 4096 | 49152 bytes (12-byte aligned entries) |
 
-Firmware (`MCUMAX_HASH_BITS=12`). `chess_ai_engine_init()` on ESP32-C3:
+Entry layout is `uint32` key, `int32` score, `uint8` from/to/depth, and one pad byte (`alignof` ≥ 4). It is not packed. Zobrist scramble words are loaded from the byte table with `memcpy` or byte loads, not a `uint32_t` cast. Firmware (`MCUMAX_HASH_BITS=12`) allocates with `heap_caps_aligned_alloc` (alignment 8, `INTERNAL|8BIT`). `chess_ai_engine_init()` on ESP32-C3:
 
 1. Largest internal 8-bit free block ≥ table size **+ 25%**
 2. After alloc, total internal free heap ≥ **32 KiB**

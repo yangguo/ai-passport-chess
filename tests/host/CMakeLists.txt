@@ -8,8 +8,9 @@ add_compile_options(-Wall -Wextra -Werror)
 
 option(CHESS_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 if(CHESS_SANITIZERS)
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined)
+  # -fno-sanitize-recover=all aborts on the first UBSan/ASan report.
+  add_compile_options(-fsanitize=address,undefined,alignment -fno-sanitize-recover=all -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined,alignment)
 endif()
 
 set(CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../components/chess_core)
@@ -181,3 +182,11 @@ add_executable(test_bsp_power test_bsp_power.c)
 target_include_directories(test_bsp_power PRIVATE power_stubs app_stubs
   ../../components/bsp/include)
 add_test(NAME bsp_power COMMAND test_bsp_power)
+
+if(CHESS_SANITIZERS)
+  get_property(chess_ctest_targets DIRECTORY PROPERTY TESTS)
+  if(chess_ctest_targets)
+    set_tests_properties(${chess_ctest_targets} PROPERTIES
+      ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+  endif()
+endif()
