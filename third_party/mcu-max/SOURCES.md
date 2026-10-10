@@ -92,21 +92,24 @@ Regression: real engine + deterministic clock at a deadline must retain
 Rxe4 against an exposed queen; expiration before a completed iteration
 still falls back, and user cancellation never plays a move.
 
-## Local patch 2026-10-10: capped knight/bishop/king PST (PST round 2)
+## Local patch 2026-10-10: capped knight/bishop/king PST (PST round 3)
 
 Adds four `int8` planes in flash (knight MG, bishop MG, king MG/EG) on top
 of the existing micro-Max terms: pawn centre table + structure, castling
-`+50`, king freeze `−20`, promotion/passers unchanged. Knight, bishop, and
-king quiet moves use **centre delta + (nbk(to)−nbk(from))**; the cap applies
-to the NBK component only.
+`+50`, king freeze `−20`, promotion/passers unchanged. The cap applies to
+the NBK component only.
 
 | Item | Detail |
 |---|---|
-| Source shape | **PeSTO** PST values via `tools/pesto_source.py` (MIT, Karls-Sun/pesto.py) |
-| Generator | `tools/gen_nbk_pst.py` → `mcumax_nbk_tables.h` (engine units, scaled to cap) |
-| Cap | `MCUMAX_NBK_PST_DELTA_CAP` 32 engine units per quiet move (`|pst(to)−pst(from)|`) |
-| King phase | Endgame king plane when `non_pawn_material > 30` (same gate as king freeze) |
-| Black | Rank mirror `square ^ 0x70` at lookup |
+| Source shape | **PeSTO** PST values via `tools/pesto_source.py` (MIT, Karls-Sun/pesto.py). Rows are a8=0. |
+| Generator | `tools/gen_nbk_pst.py` → `mcumax_nbk_tables.h`. The generator does not flip or mirror rows. |
+| Squares | mcu-max rank nibble 0 is rank 8, so dense index `((sq>>4)<<3)\|(sq&7)` is the PeSTO index for white. Black uses `square ^ 0x70` at lookup only. |
+| Cap | `MCUMAX_NBK_PST_DELTA_CAP` 32 engine units per quiet move (`\|pst(to)−pst(from)\|`) |
+| King plane | Endgame king plane when `non_pawn_material > 30` (same gate as king freeze). Search does not update that counter, so the plane is stable for a search and the incremental NBK delta matches a full-board sum. There is no PeSTO 0–24 blend on this branch. |
+| Increment | Centre delta stays mover-only. NBK adds `pst(piece now on to)−pst(piece that left)` for N/B/K, plus the captured N/B/K (en passant pawns have no plane). Promotion to N/B scores the new piece; a queen has no NBK plane. |
+| Kept | micro-Max centre weights, pawn structure `9×`, castling `+50`, king freeze `−20` |
 | RAM | 0 (`.rodata` only) |
 
-Host tests: `tests/host/test_pst_nbk.c` (`MCUMAX_EXPOSE_EVAL`).
+Round 2 stored the same value on both ranks (`out[sq ^ 0x70] = v`) and treated PeSTO as a1=0, so the planes were vertically symmetric and the king-side bonus sat on both back ranks. Captures also omitted the victim's NBK.
+
+Host tests: `tests/host/test_pst_nbk.c` (`MCUMAX_EXPOSE_EVAL`). The incremental check records the NBK delta inside `mcumax_search` and compares it to a full-board sum written in the test from the raw board bytes.

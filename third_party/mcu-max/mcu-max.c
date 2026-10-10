@@ -85,6 +85,16 @@ struct
     mcumax_move *valid_moves_buffer;
     uint32_t valid_moves_buffer_size;
     uint32_t valid_moves_num;
+
+#ifdef MCUMAX_EXPOSE_EVAL
+    uint8_t probe_active;
+    uint8_t probe_from;
+    uint8_t probe_to;
+    uint8_t probe_promo;
+    uint8_t probe_seen;
+    int32_t probe_delta;
+    uint8_t probe_board[0x80];
+#endif
 } mcumax;
 
 static const int8_t mcumax_capture_values[] = {
@@ -223,6 +233,9 @@ static void mcumax_apply_castling_rights(uint8_t rights)
 /* Knight/bishop/king PST (flash); see mcumax_nbk_tables.h and SOURCES.md. */
 #include "mcumax_nbk_tables.h"
 
+/* mcu-max 0xRF has rank nibble 0 on rank 8, so ((R<<3)|F) is the PeSTO
+ * a8=0 index. Tables are white's perspective and are not mirrored in
+ * the generator. Black flips the square with ^0x70 before indexing. */
 static uint8_t mcumax_nbk_dense_index(uint8_t sq)
 {
     return ((sq >> 4) << 3) | (sq & 7u);
@@ -255,26 +268,48 @@ static int8_t mcumax_nbk_lookup(uint8_t scan_piece_type,
 }
 
 static int32_t mcumax_positional_delta(uint8_t scan_piece_type,
-                                       uint8_t scan_piece,
                                        mcumax_square from,
                                        mcumax_square to)
 {
-    int32_t center = 0;
-
     if (scan_piece_type < 6)
     {
-        center = (int32_t)mcumax.board[from + 0x8] -
-                 (int32_t)mcumax.board[to + 0x8];
+        return (int32_t)mcumax.board[from + 0x8] -
+               (int32_t)mcumax.board[to + 0x8];
     }
 
-    if (scan_piece_type == 3 || scan_piece_type == 4 || scan_piece_type == 5)
-    {
-        return center +
-               (int32_t)mcumax_nbk_lookup(scan_piece_type, scan_piece, to) -
-               (int32_t)mcumax_nbk_lookup(scan_piece_type, scan_piece, from);
-    }
+    return 0;
+}
 
-    return center;
+static int mcumax_nbk_has_plane(uint8_t scan_piece_type)
+{
+    return scan_piece_type == 3 || scan_piece_type == 4 || scan_piece_type == 5;
+}
+
+/* NBK change for a move already on the board. The captured N/B/K is
+ * removed from the opponent, so its PST is added. A promotion scores
+ * the piece now on square_to (pawn has no plane). King MG/EG follows
+ * non_pawn_material, which search does not change. */
+static int32_t mcumax_nbk_delta(uint8_t scan_piece,
+                                uint8_t square_from,
+                                uint8_t square_to,
+                                uint8_t capture_piece,
+                                uint8_t capture_square)
+{
+    uint8_t from_type = scan_piece & 0x7u;
+    uint8_t placed = mcumax.board[square_to];
+    uint8_t placed_type = placed & 0x7u;
+    int32_t delta = 0;
+
+    if (mcumax_nbk_has_plane(placed_type))
+        delta += mcumax_nbk_lookup(placed_type, placed, square_to);
+    if (mcumax_nbk_has_plane(from_type))
+        delta -= mcumax_nbk_lookup(from_type, scan_piece, square_from);
+
+    if (mcumax_nbk_has_plane(capture_piece & 0x7u))
+        delta += mcumax_nbk_lookup(capture_piece & 0x7u, capture_piece,
+                                   capture_square);
+
+    return delta;
 }
 
 #ifdef MCUMAX_EXPOSE_EVAL
@@ -305,6 +340,16 @@ int32_t mcumax_eval_nbk_pst_score(void)
     if (mcumax.current_side == MCUMAX_BOARD_WHITE)
         return white - black;
     return black - white;
+}
+
+int32_t mcumax_eval_non_pawn_material(void)
+{
+    return mcumax.non_pawn_material;
+}
+
+int32_t mcumax_eval_nbk_piece(uint8_t piece, mcumax_square square)
+{
+    return mcumax_nbk_lookup(piece & 0x7u, piece, square);
 }
 #endif
 
@@ -564,15 +609,20 @@ static int32_t mcumax_search(int32_t alpha,
         // Change side
         mcumax.current_side ^= 0x18;
 
-        // Search null move
-        null_move_score = (iter_depth > 2) && (beta != -MCUMAX_SCORE_MAX)
-                              ? mcumax_search(-beta,
-                                              1 - beta,
-                                              -score,
-                                              MCUMAX_SQUARE_INVALID,
-                                              iter_depth - 3,
-                                              MCUMAX_INTERNAL_NODE)
-                              : MCUMAX_SCORE_MAX;
+        // Search null move. A PST probe only needs the root move delta.
+#ifdef MCUMAX_EXPOSE_EVAL
+        if (mcumax.probe_active)
+            null_move_score = MCUMAX_SCORE_MAX;
+        else
+#endif
+            null_move_score = (iter_depth > 2) && (beta != -MCUMAX_SCORE_MAX)
+                                  ? mcumax_search(-beta,
+                                                  1 - beta,
+                                                  -score,
+                                                  MCUMAX_SQUARE_INVALID,
+                                                  iter_depth - 3,
+                                                  MCUMAX_INTERNAL_NODE)
+                                  : MCUMAX_SCORE_MAX;
 
         // Change side
         mcumax.current_side ^= 0x18;
@@ -673,8 +723,12 @@ static int32_t mcumax_search(int32_t alpha,
                         // All captures if depth == 2
                         if ((iter_depth - !capture_piece) > 1)
                         {
+#ifdef MCUMAX_EXPOSE_EVAL
+                            uint8_t promoted = 0;
+#endif
+                            int32_t nbk_delta;
+
                             step_score = mcumax_positional_delta(scan_piece_type,
-                                                                 scan_piece,
                                                                  square_from,
                                                                  square_to);
 
@@ -720,9 +774,43 @@ static int32_t mcumax_search(int32_t alpha,
                                             ? (647 - scan_piece_type)
                                             : 2 * (scan_piece & (square_to + 0x10) & 0x20);
 
+#ifdef MCUMAX_EXPOSE_EVAL
+                                if ((square_to + step_vector + 1) & MCUMAX_SQUARE_INVALID)
+                                    promoted = 1;
+#endif
                                 // Upgrade pawn or convert to queen
                                 mcumax.board[square_to] += step_alpha;
                             }
+
+#ifdef MCUMAX_EXPOSE_EVAL
+                            if (promoted && mcumax.probe_active && mcumax.probe_promo &&
+                                square_from == mcumax.probe_from &&
+                                (square_to & 0x77) == mcumax.probe_to)
+                            {
+                                mcumax.board[square_to] =
+                                    (uint8_t)((mcumax.board[square_to] & (uint8_t)~0x7u) |
+                                              (mcumax.probe_promo & 0x7u));
+                            }
+#endif
+                            /* Captured N/B/K leaves the opponent. Promotion
+                             * scores the piece now on square_to. */
+                            nbk_delta = mcumax_nbk_delta(scan_piece,
+                                                         square_from,
+                                                         square_to,
+                                                         capture_piece,
+                                                         capture_square);
+#ifdef MCUMAX_EXPOSE_EVAL
+                            if (mcumax.probe_active &&
+                                square_from == mcumax.probe_from &&
+                                (square_to & 0x77) == mcumax.probe_to)
+                            {
+                                memcpy(mcumax.probe_board, mcumax.board, 0x80);
+                                mcumax.probe_delta = nbk_delta;
+                                mcumax.probe_seen++;
+                                mcumax.stop_search = true;
+                            }
+#endif
+                            step_score += nbk_delta;
 
 #ifdef MCUMAX_HASHING_ENABLED
                             mcumax.hash_key += Hash(0);
@@ -751,26 +839,33 @@ static int32_t mcumax_search(int32_t alpha,
                                 step_depth = iter_depth;
 
                             // Futility, recursive evaluation of reply
-                            do
+#ifdef MCUMAX_EXPOSE_EVAL
+                            if (mcumax.probe_active)
+                                step_score_new = step_score;
+                            else
+#endif
                             {
-                                // Change side
-                                mcumax.current_side ^= 0x18;
+                                do
+                                {
+                                    // Change side
+                                    mcumax.current_side ^= 0x18;
 
-                                step_score_new = ((mode == MCUMAX_SEARCH_VALID_MOVES) ||
-                                                  (step_depth > 2) ||
-                                                  (step_score > step_alpha))
-                                                     ? -mcumax_search(-beta,
-                                                                      -step_alpha,
-                                                                      -step_score,
-                                                                      castling_skip_square,
-                                                                      step_depth,
-                                                                      MCUMAX_INTERNAL_NODE)
-                                                     : step_score;
+                                    step_score_new = ((mode == MCUMAX_SEARCH_VALID_MOVES) ||
+                                                      (step_depth > 2) ||
+                                                      (step_score > step_alpha))
+                                                         ? -mcumax_search(-beta,
+                                                                          -step_alpha,
+                                                                          -step_score,
+                                                                          castling_skip_square,
+                                                                          step_depth,
+                                                                          MCUMAX_INTERNAL_NODE)
+                                                         : step_score;
 
-                                // Change side
-                                mcumax.current_side ^= 0x18;
-                            } while ((step_score_new > alpha) &&
-                                     (++step_depth < iter_depth));
+                                    // Change side
+                                    mcumax.current_side ^= 0x18;
+                                } while ((step_score_new > alpha) &&
+                                         (++step_depth < iter_depth));
+                            }
 
                             // No fail: re-search unreduced
                             step_score = step_score_new;
@@ -972,6 +1067,11 @@ void mcumax_init()
     mcumax.score = 0;
     mcumax.en_passant_square = MCUMAX_SQUARE_INVALID;
     mcumax.non_pawn_material = 0;
+#ifdef MCUMAX_EXPOSE_EVAL
+    mcumax.probe_active = 0;
+    mcumax.probe_seen = 0;
+    mcumax.probe_promo = 0;
+#endif
     mcumax.stop_search = false;
     mcumax.completed_move = MCUMAX_MOVE_INVALID;
     mcumax.square_from = MCUMAX_SQUARE_INVALID;
@@ -1273,6 +1373,35 @@ bool mcumax_play_move(mcumax_move move)
     return mcumax_start_search(MCUMAX_PLAY_MOVE, move, MCUMAX_DEPTH_MAX,
                                UINT32_MAX) == MCUMAX_SCORE_MAX;
 }
+
+#ifdef MCUMAX_EXPOSE_EVAL
+bool mcumax_eval_probe_nbk_delta(mcumax_square from, mcumax_square to,
+                                 uint8_t promo_type, int32_t *nbk_delta,
+                                 uint8_t *board_after)
+{
+    mcumax.probe_from = from;
+    mcumax.probe_to = (uint8_t)(to & 0x77u);
+    mcumax.probe_promo = promo_type;
+    mcumax.probe_seen = 0;
+    mcumax.probe_delta = 0;
+    mcumax.probe_active = 1;
+
+    (void)mcumax_start_search(MCUMAX_SEARCH_VALID_MOVES, MCUMAX_MOVE_INVALID, 0, 0);
+
+    mcumax.probe_active = 0;
+    mcumax.stop_search = false;
+
+    if (!mcumax.probe_seen)
+        return false;
+
+    if (nbk_delta != NULL)
+        *nbk_delta = mcumax.probe_delta;
+    if (board_after != NULL)
+        memcpy(board_after, mcumax.probe_board, 0x80);
+
+    return true;
+}
+#endif
 
 void mcumax_set_callback(mcumax_callback callback, void *userdata)
 {
