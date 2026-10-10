@@ -93,6 +93,17 @@ if(SH_BIN)
       "ok loaded-fen" "engine: "
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(cli_search_tt cli_search_nott PROPERTIES TIMEOUT 60)
+  add_test(NAME cli_movetime
+    COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
+      ./chess-cli ${CMAKE_CURRENT_SOURCE_DIR}/tests/movetime.cmd
+      "error bad-arg" "ok loaded-fen" "engine: "
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  add_test(NAME cli_movetime_nott
+    COMMAND ${SH_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check.sh
+      ./chess-cli-nott ${CMAKE_CURRENT_SOURCE_DIR}/tests/movetime.cmd
+      "error bad-arg" "ok loaded-fen" "engine: "
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(cli_movetime cli_movetime_nott PROPERTIES TIMEOUT 60)
 endif()
 
 if(CHESS_SANITIZERS)
