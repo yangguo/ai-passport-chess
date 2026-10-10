@@ -137,10 +137,30 @@ add_test(NAME perft_start_d1 COMMAND perft --fen "${START_FEN}" --depth 1)
 add_test(NAME perft_start_d2 COMMAND perft --fen "${START_FEN}" --depth 2)
 add_test(NAME perft_start_d3 COMMAND perft --fen "${START_FEN}" --depth 3)
 add_test(NAME perft_start_d4 COMMAND perft --fen "${START_FEN}" --depth 4)
-set_tests_properties(perft_start_d1 PROPERTIES PASS_REGULAR_EXPRESSION "^20")
-set_tests_properties(perft_start_d2 PROPERTIES PASS_REGULAR_EXPRESSION "^400")
-set_tests_properties(perft_start_d3 PROPERTIES PASS_REGULAR_EXPRESSION "^8902")
-set_tests_properties(perft_start_d4 PROPERTIES PASS_REGULAR_EXPRESSION "^197281")
+# PASS_REGULAR_EXPRESSION ignores the process status. A sanitizer line
+# printed after the node count would still match. Fail the test if one appears.
+set(CHESS_SANITIZER_FAIL_REGEX "runtime error:|AddressSanitizer|LeakSanitizer")
+set_tests_properties(perft_start_d1 PROPERTIES
+  PASS_REGULAR_EXPRESSION "^20"
+  FAIL_REGULAR_EXPRESSION "${CHESS_SANITIZER_FAIL_REGEX}")
+set_tests_properties(perft_start_d2 PROPERTIES
+  PASS_REGULAR_EXPRESSION "^400"
+  FAIL_REGULAR_EXPRESSION "${CHESS_SANITIZER_FAIL_REGEX}")
+set_tests_properties(perft_start_d3 PROPERTIES
+  PASS_REGULAR_EXPRESSION "^8902"
+  FAIL_REGULAR_EXPRESSION "${CHESS_SANITIZER_FAIL_REGEX}")
+set_tests_properties(perft_start_d4 PROPERTIES
+  PASS_REGULAR_EXPRESSION "^197281"
+  FAIL_REGULAR_EXPRESSION "${CHESS_SANITIZER_FAIL_REGEX}")
+
+# The count matches and the process exits 0, so this passes unless the
+# fail regex rejects the sanitizer line. WILL_FAIL inverts that failure.
+add_test(NAME sanitizer_fail_regex
+  COMMAND ${CMAKE_COMMAND} -E echo "20 runtime error: deliberate")
+set_tests_properties(sanitizer_fail_regex PROPERTIES
+  PASS_REGULAR_EXPRESSION "^20"
+  FAIL_REGULAR_EXPRESSION "${CHESS_SANITIZER_FAIL_REGEX}"
+  WILL_FAIL TRUE)
 
 # Full perft gate over tests/perft/cases.json via the host-only Python
 # runner (the C core itself never parses JSON).
