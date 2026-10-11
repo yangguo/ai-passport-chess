@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 /* Host chess CLI (playable frontend): ASCII board, UCI moves, save/load,
  * claims, resignation, and in-process engine replies (`ai`) over the
  * tested core. Every engine suggestion is core-validated before it
@@ -11,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "chess_ai.h"
 #include "chess_core.h"
@@ -21,6 +24,10 @@
 /* Engine search budget for `ai`: casual strength, seconds per move. */
 #define CLI_AI_NODES 200000u
 #define CLI_AI_DEPTH 4u
+/* `ai movetime` stops on the firmware completed-iteration deadline.
+ * These are only the CLI's existing maxima, so wall time is what binds. */
+#define CLI_MOVETIME_NODES 100000000u
+#define CLI_MOVETIME_DEPTH 64u
 
 typedef struct cli_state {
   chess_game game;
@@ -205,17 +212,96 @@ static void cmd_moves(cli_state *st, const char *arg) {
   printf("\n");
 }
 
+static void commit_engine_reply(cli_state *st, chess_move reply) {
+  chess_error err;
+  char uci[6];
+  err = chess_game_apply(&st->game, reply);
+  if (err != CHESS_OK) {
+    printf("error %s\n", move_error(err));
+    return;
+  }
+  move_to_uci(reply, uci);
+  printf("engine: %s\n", uci);
+  print_status(st);
+}
+
+/* Monotonic milliseconds, same role as the firmware esp_timer clock. */
+static uint64_t cli_clock_ms(void *ctx) {
+  struct timespec ts;
+  (void)ctx;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+    return 0;
+  }
+  return (uint64_t)ts.tv_sec * 1000ull +
+         (uint64_t)ts.tv_nsec / 1000000ull;
+}
+
+/* `ai movetime <ms>`: chess_ai_run_job deadline. The callback calls
+ * mcumax_stop_search when the clock passes the deadline. Search keeps
+ * the last fully completed root iteration and does not start another. */
+static void cmd_ai_movetime(cli_state *st, uint32_t ms) {
+  chess_ai_request req;
+  chess_ai_job job;
+  chess_move reply;
+
+  memset(&req, 0, sizeof(req));
+  memset(&job, 0, sizeof(job));
+  req.position = st->game.position;
+  req.generation = 0;
+  req.level = CHESS_AI_NORMAL;
+  req.deadline_ms = ms;
+  req.node_max = CLI_MOVETIME_NODES;
+  req.depth_max = CLI_MOVETIME_DEPTH;
+  req.easy_seed = 0;
+  req.book_seed = 0;
+  req.book_enabled = true;
+  job.clock = cli_clock_ms;
+  chess_ai_run_job(&job, &req);
+  if (job.outcome == CHESS_AI_OK && job.has_best) {
+    reply = job.best;
+  } else if ((job.outcome == CHESS_AI_TIMEOUT ||
+              job.outcome == CHESS_AI_ENGINE_ERROR) &&
+             job.has_fallback) {
+    reply = job.fallback;
+  } else {
+    printf("error engine-failed\n");
+    return;
+  }
+  commit_engine_reply(st, reply);
+}
+
 /* Engine move for the side to move, via the in-process adapter. Works
  * from any ongoing position (the engine takes FEN, so no session or
  * attach rules). The adapter core-validates; a second apply can only
  * fail if the game ended between the two calls. Optional budget:
- * `ai [nodes [depth]]`, defaults match casual host play. */
+ * `ai [nodes [depth]]` (default 200000 / 4) or `ai movetime <ms>`. */
 static void cmd_ai(cli_state *st, const char *arg) {
   chess_move reply;
-  chess_error err;
-  char uci[6];
   uint32_t nodes = CLI_AI_NODES;
   unsigned depth = CLI_AI_DEPTH;
+  if (arg != NULL && strncmp(arg, "movetime", 8) == 0 &&
+      (arg[8] == '\0' || arg[8] == ' ' || arg[8] == '\t')) {
+    const char *rest = arg + 8;
+    char *end = NULL;
+    unsigned long ms;
+    while (*rest == ' ' || *rest == '\t') {
+      rest++;
+    }
+    ms = strtoul(rest, &end, 10);
+    if (end == rest || ms == 0 || ms > 600000ul) {
+      printf("error bad-arg\n");
+      return;
+    }
+    while (*end == ' ' || *end == '\t') {
+      end++;
+    }
+    if (*end != '\0') {
+      printf("error bad-arg\n");
+      return;
+    }
+    cmd_ai_movetime(st, (uint32_t)ms);
+    return;
+  }
   if (arg != NULL) {
     char *end = NULL;
     unsigned long n = strtoul(arg, &end, 10);
@@ -236,21 +322,21 @@ static void cmd_ai(cli_state *st, const char *arg) {
         return;
       }
       depth = (unsigned)d;
+      rest = end;
+      while (*rest == ' ' || *rest == '\t') {
+        rest++;
+      }
+      if (*rest != '\0') {
+        printf("error bad-arg\n");
+        return;
+      }
     }
   }
-  if (chess_ai_suggest(&st->game.position, nodes, depth,
-                       &reply) != 0) {
+  if (chess_ai_suggest(&st->game.position, nodes, depth, &reply) != 0) {
     printf("error engine-failed\n");
     return;
   }
-  err = chess_game_apply(&st->game, reply);
-  if (err != CHESS_OK) {
-    printf("error %s\n", move_error(err));
-    return;
-  }
-  move_to_uci(reply, uci);
-  printf("engine: %s\n", uci);
-  print_status(st);
+  commit_engine_reply(st, reply);
 }
 
 static void cmd_play(cli_state *st, const char *arg) {
@@ -393,7 +479,8 @@ static void print_help(void) {
          "  load <file>      restore a save (history included)\n"
          "  fen              print the current FEN\n"
          "  status           print the game result\n"
-         "  ai               engine moves for the side to move\n"
+         "  ai [nodes [depth]]  engine move (default 200000 nodes, depth 4)\n"
+         "  ai movetime <ms>    engine move, wall-clock deadline in ms\n"
          "  help             this text\n"
          "  quit             exit\n");
 }
