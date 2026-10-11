@@ -189,6 +189,14 @@ if(PYTHON3_BIN)
 endif()
 
 # Real application state transitions; doubles only at ESP/LVGL/task boundaries.
+add_executable(test_ai_task test_ai_task.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c
+  ${AI_SOURCES} ../../main/chess_ai_task.c)
+target_include_directories(test_ai_task BEFORE PRIVATE ai_task_stubs app_stubs
+  ../../main ${AI_INCLUDES})
+chess_ai_target_hash_bits(test_ai_task 12)
+add_test(NAME ai_task COMMAND test_ai_task)
+set_tests_properties(ai_task PROPERTIES TIMEOUT 90)
+
 add_executable(test_app test_app.c ${CORE_SOURCES} ${CORE_DIR}/chess_game.c
   ${MODEL_DIR}/chess_ui_model.c ${I18N_DIR}/chess_i18n.c
   ${POWER_DIR}/chess_power.c

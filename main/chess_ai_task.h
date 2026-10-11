@@ -27,12 +27,14 @@ typedef struct chess_ai_result_event {
     chess_ai_level level;
 } chess_ai_result_event;
 
-/* Start the worker (8 KiB stack, low priority). app_task receives
- * nothing directly; results arrive via chess_ai_take_result. Unit
- * check docs/performance.md before changing the stack size. */
+/* Start the worker (16 KiB stack, priority above the app task).
+ * Results arrive via chess_ai_task_take_result. See docs/performance.md
+ * before changing the stack size. */
 bool chess_ai_task_start(void);
 
-/* Queue one search; false when a search is already running. */
+/* Queue one search; false when a search is already running.
+ * Busy is raised before the queue send, because the worker can finish
+ * a book reply before this call returns. */
 bool chess_ai_task_request(const chess_ai_request *req);
 
 /* Ask the running search to stop; its result still arrives exactly
