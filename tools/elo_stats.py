@@ -29,6 +29,7 @@ Pentanomial GSPRT
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -39,7 +40,7 @@ REGULARIZE_EPS = 1e-3
 # 800 / ln(10). Fishtest LLRcalc.nelo_divided_by_nt.
 NELO_PER_NT = 800.0 / math.log(10.0)
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 
 DIFF_NOTE = (
     "Separate matches versus a common opponent combine independent "
@@ -61,6 +62,22 @@ def cli_ai_command(movetime: int | None, nodes: int, depth: int) -> str:
     return "ai %d %d" % (nodes, depth)
 
 
+def sha256_file(path: str) -> str:
+    """SHA256 hex digest of a file's bytes."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(65536)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def match_config(
     candidate: str,
     baseline: str,
@@ -71,12 +88,26 @@ def match_config(
     alpha: float,
     beta: float,
     plies: int,
+    candidate_sha256: str,
+    baseline_sha256: str,
+    openings_sha256: str,
 ) -> dict:
+    """Fingerprint for a resumable head-to-head run.
+
+    Paths are recorded for the error text. Identity of an engine is the
+    SHA256 of the binary, so a rebuild at the same path does not match.
+    openings_sha256 is the raw openings file, or the built-in list
+    written one FEN per line. `openings` is the index order: pair i
+    plays openings[i % len(openings)].
+    """
     return {
         "version": STATE_VERSION,
         "candidate": candidate,
         "baseline": baseline,
+        "candidate_sha256": candidate_sha256,
+        "baseline_sha256": baseline_sha256,
         "budget": budget,
+        "openings_sha256": openings_sha256,
         "openings": list(openings),
         "elo0": elo0,
         "elo1": elo1,
@@ -88,47 +119,161 @@ def match_config(
 
 def fresh_state(config: dict) -> dict:
     state = dict(config)
-    state["pairs_done"] = 0
+    # Pair index -> pentanomial bin (0 LL .. 4 WW). JSON object keys
+    # are strings. Counts are derived from this map.
+    state["results"] = {}
     state["counts"] = [0, 0, 0, 0, 0]
     return state
 
 
+def counts_from_results(results: dict) -> list[int]:
+    counts = [0, 0, 0, 0, 0]
+    for bin_id in results.values():
+        counts[int(bin_id)] += 1
+    return counts
+
+
+def completed_indices(state: dict) -> set[int]:
+    return {int(key) for key in state["results"]}
+
+
+def record_pair(state: dict, index: int, bin_id: int) -> None:
+    """Record one finished pair. A second write of the same index raises."""
+    if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+        raise ValueError("pair index must be a non-negative integer")
+    if isinstance(bin_id, bool) or not isinstance(bin_id, int) or not 0 <= bin_id <= 4:
+        raise ValueError("pentanomial bin must be an integer 0..4")
+    results = state.setdefault("results", {})
+    key = str(index)
+    if key in results:
+        raise ValueError("pair index %d is already recorded" % index)
+    results[key] = bin_id
+    state["counts"] = counts_from_results(results)
+
+
+def missing_pair_indices(completed: set[int], limit: int, count: int) -> list[int]:
+    """Next pair indices to play. Holes come before any new index.
+
+    A hole is an index below the highest completed index with no
+    result. The returned batch is only holes when any exist, so a
+    later success is not replayed and an earlier failure is not
+    skipped. Otherwise it is the next `count` indices at or above the
+    high-water mark, still below `limit`.
+    """
+    if count <= 0 or limit <= 0:
+        return []
+    high = max(completed) if completed else -1
+    if high >= 0:
+        holes = [i for i in range(min(high + 1, limit)) if i not in completed]
+        if holes:
+            return holes[:count]
+    start = high + 1
+    return list(range(start, min(limit, start + count)))
+
+
+_FINGERPRINT = (
+    "version",
+    "candidate_sha256",
+    "baseline_sha256",
+    "budget",
+    "openings_sha256",
+    "openings",
+    "elo0",
+    "elo1",
+    "alpha",
+    "beta",
+    "plies",
+)
+
+
 def same_config(saved: dict, config: dict) -> bool:
-    keys = (
-        "version",
-        "candidate",
-        "baseline",
-        "budget",
-        "openings",
-        "elo0",
-        "elo1",
-        "alpha",
-        "beta",
-        "plies",
-    )
-    return all(saved.get(k) == config.get(k) for k in keys)
+    return all(saved.get(key) == config.get(key) for key in _FINGERPRINT)
+
+
+def resume_mismatches(saved: dict, config: dict) -> list[str]:
+    """Human-readable reasons to refuse a resume. Empty means it matches."""
+    reasons = []
+    if saved.get("version") != config.get("version"):
+        reasons.append(
+            "state version %s is not %s"
+            % (saved.get("version"), config.get("version"))
+        )
+    if saved.get("candidate_sha256") != config.get("candidate_sha256"):
+        reasons.append(
+            "candidate binary SHA256 changed (state %s, now %s). "
+            "A recompile at the same path is a different engine."
+            % (saved.get("candidate_sha256"), config.get("candidate_sha256"))
+        )
+    if saved.get("baseline_sha256") != config.get("baseline_sha256"):
+        reasons.append(
+            "baseline binary SHA256 changed (state %s, now %s). "
+            "A recompile at the same path is a different engine."
+            % (saved.get("baseline_sha256"), config.get("baseline_sha256"))
+        )
+    if saved.get("budget") != config.get("budget"):
+        reasons.append(
+            "budget changed (state %r, now %r)"
+            % (saved.get("budget"), config.get("budget"))
+        )
+    if saved.get("openings_sha256") != config.get("openings_sha256"):
+        reasons.append(
+            "openings file hash changed (state %s, now %s)"
+            % (saved.get("openings_sha256"), config.get("openings_sha256"))
+        )
+    if list(saved.get("openings") or []) != list(config.get("openings") or []):
+        reasons.append("opening index order changed")
+    for key in ("elo0", "elo1", "alpha", "beta", "plies"):
+        if saved.get(key) != config.get(key):
+            reasons.append(
+                "%s changed (state %r, now %r)" % (key, saved.get(key), config.get(key))
+            )
+    return reasons
 
 
 def write_state(path: str, state: dict) -> None:
+    """Atomically replace `path` (write a temp file, fsync, rename)."""
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(state, fh, indent=2, sort_keys=True)
-        fh.write("\n")
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def read_state(path: str) -> dict:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     if not isinstance(data, dict) or data.get("version") != STATE_VERSION:
-        raise ValueError("unreadable SPRT state")
+        found = data.get("version") if isinstance(data, dict) else None
+        raise ValueError("state version %s is not %s" % (found, STATE_VERSION))
+    results = data.get("results")
+    if not isinstance(results, dict):
+        raise ValueError("SPRT state has no pair-index map")
+    normalized = {}
+    for key, bin_id in results.items():
+        if not isinstance(key, str) or not key.isdigit() or str(int(key)) != key:
+            raise ValueError("pair index %r is not a canonical integer" % (key,))
+        if isinstance(bin_id, bool) or not isinstance(bin_id, int) or not 0 <= bin_id <= 4:
+            raise ValueError("pair %s result is not a pentanomial bin 0..4" % key)
+        normalized[key] = bin_id
+    data["results"] = normalized
+    derived = counts_from_results(normalized)
     counts = data.get("counts")
-    if (
-        not isinstance(counts, list)
-        or len(counts) != 5
-        or any(not isinstance(c, int) or c < 0 for c in counts)
-    ):
-        raise ValueError("SPRT state counts are not five non-negative integers")
+    if counts is not None and counts != derived:
+        raise ValueError("SPRT state counts do not match recorded pair indices")
+    data["counts"] = derived
+    for hex_key in ("candidate_sha256", "baseline_sha256", "openings_sha256"):
+        value = data.get(hex_key)
+        if not isinstance(value, str) or len(value) != 64:
+            raise ValueError("SPRT state %s is not a SHA256 hex digest" % hex_key)
     return data
 
 

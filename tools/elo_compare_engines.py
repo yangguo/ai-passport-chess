@@ -13,7 +13,10 @@ Openings are paired and colors are swapped. Results are pentanomial
 (LL, LD, DD/WL, WD, WW). The run reports logistic and normalized Elo
 with 95% intervals, and a pentanomial GSPRT (Fishtest logistic LLR)
 with Wald bounds. It stops when the LLR crosses a bound, or at
---pairs. --state resumes completed pairs. --concurrency is the number
+--pairs. --state resumes by pair index. It stores the SHA256 of both
+binaries, the budget, the openings-file hash, elo0/elo1/alpha/beta,
+and the opening order. A mismatch refuses the resume. A failed pair
+is retried; a saved index is not replayed. --concurrency is the number
 of games in flight. --movetime and --nodes/--depth are the two budgets;
 a node cap is checked between root iterations, so acceptance matches
 should prefer --movetime.
@@ -49,13 +52,18 @@ try:
         fresh_state,
         llr_logistic,
         match_config,
+        missing_pair_indices,
         pair_bin,
         pentanomial_summary,
         read_state,
-        same_config,
+        record_pair,
+        resume_mismatches,
+        sha256_file,
+        sha256_text,
         sprt_bounds,
         sprt_decision,
         write_state,
+        completed_indices,
     )
 except ImportError:
     from tools.elo_match import Cli, play_game
@@ -63,14 +71,19 @@ except ImportError:
         DIFF_NOTE,
         arm_elo,
         cli_ai_command,
+        completed_indices,
         elo_difference,
         fresh_state,
         llr_logistic,
         match_config,
+        missing_pair_indices,
         pair_bin,
         pentanomial_summary,
         read_state,
-        same_config,
+        record_pair,
+        resume_mismatches,
+        sha256_file,
+        sha256_text,
         sprt_bounds,
         sprt_decision,
         write_state,
@@ -220,13 +233,33 @@ def _print_h2h(state: dict, llr: float, lower: float, upper: float, decision: st
     )
 
 
-def run_h2h(args, budget: str) -> int:
-    openings = load_openings(args.openings)
+def run_h2h(args, budget: str, play_pair=None) -> int:
+    """Play the head-to-head match.
+
+    play_pair(index, fen, candidate, baseline, budget, plies) returns a
+    pentanomial bin 0..4, or None when that pair failed. The default
+    plays two real chess-cli games. Tests pass a fake.
+    """
+    try:
+        if args.openings:
+            openings_sha = sha256_file(args.openings)
+        openings = load_openings(args.openings)
+    except (OSError, ValueError) as exc:
+        print("openings: %s" % exc, file=sys.stderr)
+        return 1
     for fen in openings:
         # Reject illegal FENs before any process starts.
         chess.Board(fen)
+    if not args.openings:
+        openings_sha = sha256_text("".join(fen + "\n" for fen in openings))
     candidate = os.path.abspath(args.candidate)
     baseline = os.path.abspath(args.baseline)
+    try:
+        candidate_sha = sha256_file(candidate)
+        baseline_sha = sha256_file(baseline)
+    except OSError as exc:
+        print("cannot hash engine binary: %s" % exc, file=sys.stderr)
+        return 1
     config = match_config(
         candidate,
         baseline,
@@ -237,18 +270,38 @@ def run_h2h(args, budget: str) -> int:
         args.alpha,
         args.beta,
         args.plies,
+        candidate_sha,
+        baseline_sha,
+        openings_sha,
     )
-    if args.state and os.path.exists(args.state):
-        state = read_state(args.state)
-        if not same_config(state, config):
-            print("state file does not match this match's settings", file=sys.stderr)
+    resuming = bool(args.state and os.path.exists(args.state))
+    if resuming:
+        try:
+            state = read_state(args.state)
+        except (OSError, ValueError) as exc:
+            print("refusing to resume: %s" % exc, file=sys.stderr)
             return 1
-        if sum(state["counts"]) != state["pairs_done"]:
-            print("state file pair count does not match counts", file=sys.stderr)
+        reasons = resume_mismatches(state, config)
+        if reasons:
+            print("refusing to resume:", file=sys.stderr)
+            for reason in reasons:
+                print("  %s" % reason, file=sys.stderr)
             return 1
-        print("resume pairs_done=%d" % state["pairs_done"], flush=True)
+        done = sorted(completed_indices(state))
+        if len(done) <= 8:
+            shown = str(done)
+        else:
+            hole_list = [i for i in range(done[-1] + 1) if i not in set(done)]
+            shown = "%d pairs through %d, holes %s" % (
+                len(done),
+                done[-1],
+                hole_list[:12],
+            )
+        print("resume completed %s" % shown, flush=True)
     else:
         state = fresh_state(config)
+        if args.state:
+            write_state(args.state, state)
     lower, upper = sprt_bounds(args.alpha, args.beta)
     print(
         "h2h budget %s elo0 %g elo1 %g alpha %g beta %g bounds [%+.4f, %+.4f]"
@@ -257,76 +310,118 @@ def run_h2h(args, budget: str) -> int:
     )
     print("openings %d concurrency %d" % (len(openings), args.concurrency), flush=True)
     limit = args.pairs if args.pairs is not None else 10**9
+    already = completed_indices(state)
+    past = sorted(index for index in already if index >= limit)
+    if past:
+        print(
+            "refusing to resume: saved pair index %d is past --pairs %d"
+            % (past[0], limit),
+            file=sys.stderr,
+        )
+        return 1
     use_sprt = not args.no_sprt
-    next_pair = state["pairs_done"]
     # One batch is concurrency//2 pairs (at least one). Both games of a
     # pair are started together when concurrency >= 2. The SPRT is
     # rechecked after the batch, so a batch already in flight can cross
-    # the bound by the rest of that batch.
+    # the bound by the rest of that batch. Holes (a failed pair whose
+    # sibling was saved) are filled before that check.
     batch_pairs = max(1, args.concurrency // 2)
     workers = max(1, min(args.concurrency, batch_pairs * 2))
 
-    def commit(as_white: float, as_black: float) -> str:
-        state["counts"][pair_bin(as_white, as_black)] += 1
-        state["pairs_done"] += 1
+    def save_pair(pid: int, bin_id: int) -> None:
+        record_pair(state, pid, bin_id)
         if args.state:
             write_state(args.state, state)
         llr = llr_logistic(args.elo0, args.elo1, state["counts"])
         decision = sprt_decision(llr, args.alpha, args.beta) if use_sprt else "fixed"
         _print_h2h(state, llr, lower, upper, decision)
-        return decision
+
+    def real_outcomes(ids, pool):
+        jobs = []
+        for pid in ids:
+            fen = openings[pid % len(openings)]
+            jobs.append((pid, "white", fen))
+            jobs.append((pid, "black", fen))
+        results = {}
+        if workers == 1:
+            for pid, side, fen in jobs:
+                if side == "white":
+                    results[(pid, side)] = _one_game(
+                        candidate, baseline, fen, budget, args.plies
+                    )
+                else:
+                    results[(pid, side)] = _one_game(
+                        baseline, candidate, fen, budget, args.plies
+                    )
+        else:
+            futs = {}
+            for pid, side, fen in jobs:
+                if side == "white":
+                    futs[(pid, side)] = pool.submit(
+                        _one_game, candidate, baseline, fen, budget, args.plies
+                    )
+                else:
+                    futs[(pid, side)] = pool.submit(
+                        _one_game, baseline, candidate, fen, budget, args.plies
+                    )
+            results = {key: fut.result() for key, fut in futs.items()}
+        outcomes = {}
+        for pid in ids:
+            white_score = results[(pid, "white")]
+            black_score = results[(pid, "black")]
+            if white_score is None or black_score is None:
+                outcomes[pid] = None
+            else:
+                # black_score is White's result in the game where the
+                # candidate is Black, so the candidate's score is the complement.
+                outcomes[pid] = pair_bin(white_score, 1.0 - black_score)
+        return outcomes
+
+    def fake_outcomes(ids, pool):
+        def run(pid):
+            fen = openings[pid % len(openings)]
+            return play_pair(pid, fen, candidate, baseline, budget, args.plies)
+
+        if workers == 1:
+            return {pid: run(pid) for pid in ids}
+        futs = {pid: pool.submit(run, pid) for pid in ids}
+        return {pid: fut.result() for pid, fut in futs.items()}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        while next_pair < limit:
-            if use_sprt and state["pairs_done"] > 0:
+        while True:
+            done = completed_indices(state)
+            ids = missing_pair_indices(done, limit, batch_pairs)
+            if not ids:
+                break
+            filling = bool(done) and min(ids) <= max(done)
+            if use_sprt and done and not filling:
                 llr_now = llr_logistic(args.elo0, args.elo1, state["counts"])
                 if sprt_decision(llr_now, args.alpha, args.beta) != "continue":
                     break
-            take = min(batch_pairs, limit - next_pair)
-            ids = list(range(next_pair, next_pair + take))
-            next_pair += take
-            jobs = []
-            for pid in ids:
-                fen = openings[pid % len(openings)]
-                jobs.append((pid, "white", fen))
-                jobs.append((pid, "black", fen))
-            if workers == 1:
-                results = {}
-                for pid, side, fen in jobs:
-                    if side == "white":
-                        results[(pid, side)] = _one_game(
-                            candidate, baseline, fen, budget, args.plies
-                        )
-                    else:
-                        results[(pid, side)] = _one_game(
-                            baseline, candidate, fen, budget, args.plies
-                        )
+            if play_pair is None:
+                outcomes = real_outcomes(ids, pool)
             else:
-                futs = {}
-                for pid, side, fen in jobs:
-                    if side == "white":
-                        futs[(pid, side)] = pool.submit(
-                            _one_game, candidate, baseline, fen, budget, args.plies
-                        )
-                    else:
-                        futs[(pid, side)] = pool.submit(
-                            _one_game, baseline, candidate, fen, budget, args.plies
-                        )
-                results = {key: fut.result() for key, fut in futs.items()}
-            aborted = False
+                outcomes = fake_outcomes(ids, pool)
+            failed = []
             for pid in ids:
-                white_score = results[(pid, "white")]
-                black_score = results[(pid, "black")]
-                if white_score is None or black_score is None:
-                    aborted = True
+                outcome = outcomes[pid]
+                if outcome is None:
+                    failed.append(pid)
                     continue
-                # black_score is White's result in the game where the
-                # candidate is Black, so the candidate's score is the complement.
-                commit(white_score, 1.0 - black_score)
-            if aborted:
-                print("aborted game; refusing to continue", file=sys.stderr)
+                try:
+                    save_pair(pid, outcome)
+                except ValueError as exc:
+                    print("refusing to record: %s" % exc, file=sys.stderr)
+                    return 1
+            if failed:
+                print(
+                    "aborted pair index %s; saved indices %s; "
+                    "resume retries the missing indices and does not replay saved ones"
+                    % (failed, sorted(completed_indices(state))),
+                    file=sys.stderr,
+                )
                 return 1
-        if state["pairs_done"] == 0:
+        if not completed_indices(state):
             print("no pairs played", file=sys.stderr)
             return 1
         llr = llr_logistic(args.elo0, args.elo1, state["counts"])
@@ -433,7 +528,10 @@ def main(argv=None) -> int:
     ap.add_argument("--plies", type=int, default=200)
     ap.add_argument("--pairs", type=int, default=None, help="max color-swapped pairs")
     ap.add_argument("--concurrency", type=int, default=1)
-    ap.add_argument("--state", help="JSON file for a resumable SPRT")
+    ap.add_argument(
+        "--state",
+        help="JSON resume file: engine SHA256, openings hash, pair indices",
+    )
     ap.add_argument("--openings", help="FEN file, one white-to-move line each")
     ap.add_argument("--elo0", type=float, default=0.0, help="H0 logistic Elo (default 0)")
     ap.add_argument(

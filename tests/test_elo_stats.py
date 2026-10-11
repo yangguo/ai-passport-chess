@@ -19,7 +19,10 @@ from tools.elo_stats import (
     llr_logistic,
     logistic_elo,
     match_config,
+    missing_pair_indices,
     pair_bin,
+    record_pair,
+    resume_mismatches,
     pentanomial_summary,
     read_state,
     same_config,
@@ -204,15 +207,21 @@ class HarnessTests(unittest.TestCase):
             0.05,
             0.05,
             200,
+            "a" * 64,
+            "b" * 64,
+            "c" * 64,
         )
         state = fresh_state(config)
-        state["counts"] = [0, 1, 2, 0, 0]
-        state["pairs_done"] = 3
+        record_pair(state, 0, 1)
+        record_pair(state, 1, 2)
+        record_pair(state, 2, 2)
         with tempfile.TemporaryDirectory() as temp:
             path = os.path.join(temp, "sprt.json")
             write_state(path, state)
             loaded = read_state(path)
+            self.assertFalse(os.path.exists(path + ".tmp"))
         self.assertTrue(same_config(loaded, config))
+        self.assertEqual(loaded["results"], {"0": 1, "1": 2, "2": 2})
         self.assertEqual(loaded["counts"], [0, 1, 2, 0, 0])
         other = match_config(
             config["candidate"],
@@ -224,8 +233,23 @@ class HarnessTests(unittest.TestCase):
             0.05,
             0.05,
             200,
+            config["candidate_sha256"],
+            config["baseline_sha256"],
+            config["openings_sha256"],
         )
         self.assertFalse(same_config(loaded, other))
+        self.assertTrue(
+            any("elo1 changed" in reason for reason in resume_mismatches(loaded, other))
+        )
+
+    def test_missing_indices_retry_the_hole_and_not_the_saved_sibling(self):
+        # Pair index 1 is saved and pair index 0 is not. The next batch
+        # is index 0 only: not index 1 again, and not a new index 2.
+        self.assertEqual(missing_pair_indices({1}, 10, 2), [0])
+        self.assertEqual(missing_pair_indices({0, 1}, 10, 2), [2, 3])
+        self.assertEqual(missing_pair_indices(set(), 4, 2), [0, 1])
+        with self.assertRaises(ValueError):
+            record_pair({"results": {"1": 4}, "counts": [0, 0, 0, 0, 1]}, 1, 4)
 
 
 if __name__ == "__main__":

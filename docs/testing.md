@@ -52,7 +52,7 @@ AI fake clock 在每次 callback 推进时间；deadline 到达必须停止并�
 
 验收用候选 `chess-cli` 对基线 `chess-cli` 的直接对局。每个开局下两盘，颜色互换，记成一对。五结果计数是 LL、LD（含 DL）、DD/WL、WD（含 DW）、WW。报告 logistic Elo 与 normalized Elo 的 95% 区间，以及 pentanomial GSPRT（与 Fishtest 相同的 logistic 期望值广义似然比；空桶先填 `1e-3`）。默认 H0 为 +0 Elo，H1 为 +10 Elo，`alpha=beta=0.05`。+10 是粗的验收门槛，不是 2 Elo 的补丁测试。Wald 边界是 `ln(β/(1−α))` 与 `ln((1−β)/α)`，约 `[-2.944, 2.944]`。LLR 越过上界接受 H1，越过下界接受 H0。这里不用 Fishtest 的 overshoot 修正。`--concurrency` 按批同时跑若干对（每批 `max(1, concurrency//2)` 对）；已经开下的一批会下完再看边界。
 
-节点上限在根迭代之间才检查，更便宜的评估可能在同一节点预算里多下一层。验收优先用 `--movetime`（固件的完成迭代时限）。`--state` 在每一对写完后保存计数，相同参数再次启动会从下一对继续；中断时还没写完的一对会重下。
+节点上限在根迭代之间才检查，更便宜的评估可能在同一节点预算里多下一层。验收优先用 `--movetime`（固件的完成迭代时限）。`--state` 在开局前写入指纹，每成功一对就原子替换（临时文件、fsync、rename）。指纹含候选和基线二进制的 SHA256、预算、开局文件哈希、elo0/elo1/alpha/beta、ply 上限，以及开局顺序。同一路径重新编译后哈希变了，续跑会拒绝，避免把两版引擎的结果混在一起。已完成的对局按下标保存（开局序号 → 五结果桶）。续跑只下还没有结果的下标：一批里一对失败、另一对成功时，失败的下标会重试，成功的下标不会重下，也不会被跳过。有空洞时先补洞，再看 SPRT 要不要停。
 
 ```sh
 python3 tools/elo_compare_engines.py --h2h \
