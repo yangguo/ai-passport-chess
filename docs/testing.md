@@ -46,6 +46,36 @@ AI fake clock 在每次 callback 推进时间；deadline 到达必须停止并�
 
 开局库 host 测试（`test_opening_book`）：`book_seed == 0` 起始局面为 `e2e4`、对 `e4` 不应默认 `c7c6`、库命中不启动搜索（`callback_count == 0`）、转置同键、Easy 在库内不走 15% 随机、读档路径 `book_enabled` 为 false（`test_app`）。表由 `tools/gen_opening_book.py` 从 Lichess `chess-openings` TSV + `tools/data/opening_explorer_cache.json` 生成；`opening_lines.txt` 为生成物。改线后重跑 `gen_opening_book.py`、`validate_opening_book.py` 并提交 `opening_book.c`。来源见 `components/chess_ai/BOOK_SOURCES.md`。
 
+## PST 的 SPRT 验收
+
+两套引擎各自对同一对手（例如 Stockfish）算出的 Elo 差，用 `sqrt(se_a^2+se_b^2)` 合成。这是保守区间：共同对手的抽样噪声被算了两次，比分靠近 0% 或 100% 时 logistic 标准误会失真，不能当作 PST 验收。单臂 95% 区间用胜/和/负三项方差，再把比分区间 `p ± 1.96 se` 变换成 Elo。120 胜、0 和、80 负（60%，200 局）打印为 `[22, 121]`。
+
+验收用候选 `chess-cli` 对基线 `chess-cli` 的直接对局。每个开局下两盘，颜色互换，记成一对。五结果计数是 LL、LD（含 DL）、DD/WL、WD（含 DW）、WW。报告 logistic Elo 与 normalized Elo 的 95% 区间，以及 pentanomial GSPRT（与 Fishtest 相同的 logistic 期望值广义似然比；空桶先填 `1e-3`）。默认 H0 为 +0 Elo，H1 为 +10 Elo，`alpha=beta=0.05`。+10 是粗的验收门槛，不是 2 Elo 的补丁测试。Wald 边界是 `ln(β/(1−α))` 与 `ln((1−β)/α)`，约 `[-2.944, 2.944]`。LLR 越过上界接受 H1，越过下界接受 H0。这里不用 Fishtest 的 overshoot 修正。`--concurrency` 按批同时跑若干对（每批 `max(1, concurrency//2)` 对）；已经开下的一批会下完再看边界。
+
+节点上限在根迭代之间才检查，更便宜的评估可能在同一节点预算里多下一层。验收优先用 `--movetime`（固件的完成迭代时限）。`--state` 在每一对写完后保存计数，相同参数再次启动会从下一对继续；中断时还没写完的一对会重下。
+
+```sh
+python3 tools/elo_compare_engines.py --h2h \
+  --candidate apps/cli/build/chess-cli \
+  --baseline apps/cli/build-main/chess-cli \
+  --movetime 1500 \
+  --concurrency 4 \
+  --state /tmp/pst-sprt.json \
+  --elo0 0 --elo1 10
+```
+
+节点预算（不能和 `--movetime` 同时给）：
+
+```sh
+python3 tools/elo_compare_engines.py --h2h \
+  --candidate apps/cli/build/chess-cli \
+  --baseline apps/cli/build-main/chess-cli \
+  --nodes 200000 --depth 4 \
+  --pairs 100 --concurrency 2
+```
+
+`--pairs` 是上限。省略则直到 SPRT 停止。`--no-sprt` 必须同时给 `--pairs`。`--openings` 是每行一个白方走棋的 FEN，缺省用内置开局并循环。
+
 ## 编译与设备
 
 host `-Wall -Wextra -Werror`。`CHESS_SANITIZERS=ON` 使用 `-fsanitize=address,undefined,alignment -fno-sanitize-recover=all`，ctest 设置 `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`，任何 UBSan 报告都失败。同一次 host ctest 跑 perft、`MCUMAX_HASH_BITS=12` 的 `mcumax_hash` 和 bits 0 的 `mcumax_hash_off`；CLI ctest 对 TT 开（`chess-cli`）和关（`chess-cli-nott`）各跑一次短搜索，另有 `ai movetime <ms>`（`cli_movetime` / `cli_movetime_nott`）。不以 sizeof 相等证明二进制序列化可移植。device test 记录屏幕照片/视频、按钮序列、串口日志、固件 SHA256、heap、最大块、stack 最低水位和搜索 p95。官方模拟器可辅助 UI，但不证明 ADC、NVS掉电、内存或RF实机效果。
