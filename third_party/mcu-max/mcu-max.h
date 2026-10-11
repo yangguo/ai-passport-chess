@@ -152,6 +152,17 @@ void mcumax_hash_get_stats(struct mcumax_hash_stats *out);
 /** Nodes consumed by the last search (reset at search start). */
 uint32_t mcumax_get_last_search_nodes(void);
 
+/** Nodes visited and last completed root iteration depth from the latest search. */
+void mcumax_get_last_search_stats(uint32_t *nodes, uint32_t *iter_depth);
+
+#ifdef MCUMAX_EXPOSE_EVAL
+/** Side-to-move PST total from the board (engine units). */
+int32_t mcumax_eval_pst_score(void);
+
+/** Recompute PST from the board (host tests). */
+int32_t mcumax_eval_pst_from_scratch(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
