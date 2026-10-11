@@ -17,6 +17,8 @@
  * check after search. Treat this as a provisional floor until the device
  * high-water mark is measured at every difficulty. */
 #define AI_TASK_STACK 16384
+/* Above chess_app (tskIDLE_PRIORITY + 1). xQueueSend therefore runs this
+ * task before chess_ai_task_request returns. */
 #define AI_TASK_PRIORITY 3
 
 static const char *TAG = "chess-ai";
@@ -25,8 +27,10 @@ static QueueHandle_t s_requests;
 static TaskHandle_t s_worker;
 static chess_ai_job s_job;
 static chess_ai_result_event s_result;
-static bool s_result_pending;
-static bool s_busy;
+/* Cross-task flags. The worker is higher priority than the app, so these
+ * stores are visible as soon as the worker blocks or finishes. */
+static volatile bool s_result_pending;
+static volatile bool s_busy;
 
 static uint64_t clock_ms(void *ctx) {
     (void)ctx;
@@ -88,10 +92,15 @@ bool chess_ai_task_request(const chess_ai_request *req) {
     if (s_worker == NULL || req == NULL || s_busy) {
         return false;
     }
+    /* Mark busy before the send. A book reply (and any other job that
+     * finishes without blocking) runs inside xQueueSend and clears busy
+     * before this function continues. Setting busy afterwards undid that
+     * clear, left the worker idle, and refused every later move. */
+    s_busy = true;
     if (xQueueSend(s_requests, req, 0) != pdTRUE) {
+        s_busy = false;
         return false;
     }
-    s_busy = true;
     return true;
 }
 
