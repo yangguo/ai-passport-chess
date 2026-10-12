@@ -13,7 +13,7 @@
 | app task stack | 起点4KiB | ESP-IDF stack单位核对；测最低余量 |
 | storage stack+编码缓冲 | 起点3KiB + ≤6KiB | 只保留一个编码 buffer，不多复制大快照 |
 | AI task stack | 起点16KiB | 设备实测8KiB在搜索后合法着校验时溢出；必须测各难度高水位 |
-| AI TT | 0（M2） | hashing disabled；MAP不得出现巨表 |
+| AI TT | 0 或 4096 项（约 48KiB heap，门槛不过则关） | `MCUMAX_HASH_BITS=12`；仅单次搜索内有效；禁止 1024 项档；见 [tt-transposition-table.md](artifacts/tt-transposition-table.md) |
 | 棋子 | 5400B基础mask，Flash | 不复制全部像素到heap |
 | 全屏 RGB565 canvas | 0 | 240×320×2=153600B，禁止分配 |
 

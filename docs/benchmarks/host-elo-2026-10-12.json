@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-12",
+  "commit": "8e72ee4",
+  "opponent": "Stockfish 17.1, 1 thread, 16 MiB hash, 0.2 s/move",
+  "our_budget": "chess-cli ai movetime matching firmware wall clock (100 / 1500 / 5000 ms); Easy includes 15% random non-best legal after search",
+  "elo_scale": "Stockfish skill-to-Elo (search.h CCRL blitz); conversion uncertain ±100–150; not Chess.com or human rating",
+  "host_faster_than_esp32_c3": true,
+  "note": "Upper-bound host strength vs device; device nodes/s NOT RUN",
+  "configs": [
+    {
+      "id": "easy-movetime-100",
+      "label": "Easy (100 ms/move + 15% random)",
+      "skill": 0,
+      "n": 150,
+      "w_d_l": [61, 36, 53],
+      "score_pct": 52.7,
+      "elo_vs_skill": 1365,
+      "elo_ci95": [1317, 1415]
+    },
+    {
+      "id": "easy-movetime-100-skill1",
+      "label": "Easy (100 ms/move + 15% random)",
+      "skill": 1,
+      "n": 100,
+      "w_d_l": [30, 16, 54],
+      "score_pct": 38.0,
+      "elo_vs_skill": 1359,
+      "elo_ci95": [1291, 1421]
+    },
+    {
+      "id": "normal-movetime-1500-skill5",
+      "label": "Normal (1500 ms/move; firmware 5M nodes / depth 8 guardrails)",
+      "skill": 5,
+      "n": 150,
+      "w_d_l": [74, 46, 30],
+      "score_pct": 64.7,
+      "elo_vs_skill": 2302,
+      "elo_ci95": [2256, 2352]
+    },
+    {
+      "id": "normal-movetime-1500-skill6",
+      "label": "Normal (1500 ms/move)",
+      "skill": 6,
+      "n": 100,
+      "w_d_l": [37, 34, 29],
+      "score_pct": 54.0,
+      "elo_vs_skill": 2410,
+      "elo_ci95": [2355, 2467]
+    },
+    {
+      "id": "hard-movetime-5000-skill5",
+      "label": "Hard (5000 ms/move; firmware 20M nodes / depth 12 guardrails)",
+      "skill": 5,
+      "n": 120,
+      "w_d_l": [75, 30, 15],
+      "score_pct": 75.0,
+      "elo_vs_skill": 2388,
+      "elo_ci95": [2333, 2452]
+    },
+    {
+      "id": "hard-movetime-5000-skill7",
+      "label": "Hard (5000 ms/move)",
+      "skill": 7,
+      "n": 120,
+      "w_d_l": [31, 52, 37],
+      "score_pct": 47.5,
+      "elo_vs_skill": 2501,
+      "elo_ci95": [2453, 2548]
+    }
+  ],
+  "sprt_pesto_vs_previous_main": {
+    "tool": "tools/elo_compare_engines.py --h2h",
+    "pairs": 108,
+    "pentanomial": "0/10/65/30/3",
+    "score_pct": 56.0,
+    "elo_delta": 42,
+    "elo_ci95": [21, 64],
+    "llr": 2.97,
+    "bounds": "±2.94",
+    "hypothesis": "H0 0 Elo / H1 +10 Elo, alpha=beta=5%",
+    "movetime_ms": 200,
+    "openings": "Lichess 1378-position set",
+    "verdict": "H1 accepted"
+  }
+}
