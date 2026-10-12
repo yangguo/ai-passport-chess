@@ -204,7 +204,7 @@ static void engine_callback(void *userdata) {
     }
     /* Yield at most every few ms of search time, never per node. */
     if (job->yield != NULL && now - job->last_yield_ms >= 3u) {
-        job->last_yield_ms = (uint32_t)now;
+        job->last_yield_ms = now;
         job->yield(job->yield_ctx);
     }
 }
@@ -264,8 +264,8 @@ void chess_ai_run_job(chess_ai_job *job, const chess_ai_request *req) {
         return;
     }
     job->started_at_ms =
-        job->clock != NULL ? (uint32_t)job->clock(job->clock_ctx) : 0u;
-    job->deadline_at_ms = job->started_at_ms + req->deadline_ms;
+        job->clock != NULL ? job->clock(job->clock_ctx) : 0ull;
+    job->deadline_at_ms = job->started_at_ms + (uint64_t)req->deadline_ms;
     job->last_yield_ms = job->started_at_ms;
     s_callback_ctx.job = job;
     mcumax_set_fen_position(fen);

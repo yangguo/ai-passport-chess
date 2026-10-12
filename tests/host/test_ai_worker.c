@@ -301,6 +301,49 @@ static void test_avoid_mate_in_one(void) {
     }
 }
 
+/* Host monotonic clocks exceed 2^32 ms after ~49.7 days. Truncating
+ * deadline bookkeeping to 32 bits made every timed search stop on the
+ * first callback once uptime crossed that line. */
+static void test_deadline_past_u32_ms_boundary(void) {
+    chess_ai_request req;
+    chess_ai_job job;
+    fake_clock clock;
+    memset(&clock, 0, sizeof(clock));
+    memset(&job, 0, sizeof(job));
+    make_request(&req, START_FEN, CHESS_AI_NORMAL, &clock);
+    clock.now = (uint64_t)UINT32_MAX - 2000u;
+    clock.step_per_callback = 0u;
+    req.deadline_ms = 3600000u;
+    req.node_max = 5000000u;
+    req.depth_max = 8u;
+    job.clock = fake_now;
+    job.clock_ctx = &clock;
+    chess_ai_run_job(&job, &req);
+    CHECK(job.outcome == CHESS_AI_OK);
+    CHECK(job.has_best);
+}
+
+static void test_deadline_elapsed_across_u32_wrap(void) {
+    chess_ai_request req;
+    chess_ai_job job;
+    fake_clock clock;
+    memset(&clock, 0, sizeof(clock));
+    memset(&job, 0, sizeof(job));
+    make_request(&req, START_FEN, CHESS_AI_NORMAL, &clock);
+    clock.now = (uint64_t)UINT32_MAX - 100u;
+    clock.step_per_callback = 1u;
+    req.deadline_ms = 5000u;
+    req.node_max = 100000000u;
+    req.depth_max = 30u;
+    job.clock = fake_now;
+    job.clock_ctx = &clock;
+    chess_ai_run_job(&job, &req);
+    CHECK(job.outcome == CHESS_AI_OK);
+    CHECK(job.has_best);
+    CHECK(clock.now >= job.started_at_ms);
+    CHECK(job.deadline_at_ms == job.started_at_ms + 5000u);
+}
+
 static void test_apply_checked(void) {
     chess_game game;
     chess_move m = {12, 28, CHESS_EMPTY};
@@ -328,6 +371,8 @@ int main(int argc, char **argv) {
     test_ok_search();
     test_timeout_keeps_fallback();
     test_deadline_keeps_searched_capture();
+    test_deadline_past_u32_ms_boundary();
+    test_deadline_elapsed_across_u32_wrap();
     test_cancel_before_search();
     test_cancel_mid_search();
     test_no_move_terminal();
