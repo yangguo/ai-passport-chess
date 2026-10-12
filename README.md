@@ -2,7 +2,7 @@
 
 面向 **FoloToy AI Passport** 的离线国际象棋游戏：240×320 竖屏，三键操作，纯 C 规则核心，支持本地双人和离线 AI。
 
-**当前状态：** 规则核心、可玩棋局、AI、中文切换、执白/执黑选择、存档及省电功能已合入 `main`。主机回归和 ESP-IDF 构建通过；部分真机项目仍待验收，AI 的 Chess.com 快棋 1200 目标尚未评级。详见[开发状态](docs/status.md)和[验收记录](docs/acceptance.md)。
+**当前状态：** 规则核心、可玩棋局、AI（Lichess CC0 开局库、FEN/易位修复、可选 4K TT、PeSTO/PST 修正）、中文切换、执白/执黑、存档及省电已合入 `main`（至 PR #19）。主机回归与 ESP-IDF 构建通过；2026-10-12 主机上对 Stockfish 17.1 完成 `movetime` 强度复测（Easy ≈1360，Normal ≈2300–2410，Hard ≈2390–2500，CCRL 尺度、主机上界）。Chess.com 快棋 1200 仍为独立平台目标。社区玩法 **play 1013 / revision 2614** 已提交、待审。详见[开发状态](docs/status.md)、[AI 集成](docs/ai-integration.md)与[验收记录](docs/acceptance.md)。
 
 ## 当前功能
 
