@@ -1,4 +1,4 @@
-# Transposition table validation (branch `cursor/mcu-max-transposition-table-e483`)
+# Transposition table validation (merged in PR #11; branch `cursor/mcu-max-transposition-table-e483`)
 
 ## Ship decision
 

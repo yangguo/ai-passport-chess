@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- **AI:** Seeded opening book in the mcu-max adapter (~87 positions from Lichess
-  `chess-openings` + explorer weight cache); `book_seed == 0` keeps host Elo
-  harness reproducible. Regenerate via `tools/gen_opening_book.py`.
+- **AI:** Lichess CC0 opening book by real frequency (#8/#10); FEN castling/moved flags and optional 4K-entry TT per search (#11); PeSTO evaluation fix with paired pentanomial SPRT in `tools/elo_compare_engines.py` (#15); PST orientation/capture fix (#17); busy-flag fix so AI continues after a book reply on Normal/Hard (#19).
+- **Docs:** 2026-10-12 host Elo retest vs Stockfish 17.1 (`movetime` aligned to firmware); supersede 2026-10-08 node-proxy table; archive engine-strength and PST round-2 plans with outcome summaries.
+- **Community:** FoloToy AI Passport play 1013 revision 2614 submitted for review (pending; not public until approved).
 
 ## 0.1.0-design — 2026-10-06
 

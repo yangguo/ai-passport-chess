@@ -77,6 +77,21 @@ class Cli:
                 raise RuntimeError("cli refused ai: %s" % line)
         raise RuntimeError("ai gave no move")
 
+    def loadfen(self, fen):
+        """Replace the game with a FEN. Returns when the CLI accepts it."""
+        self.proc.stdin.write("loadfen %s\n" % fen)
+        self.proc.stdin.flush()
+        for _ in range(50):
+            line = self.proc.stdout.readline()
+            if not line:
+                raise RuntimeError("cli EOF during loadfen")
+            line = line.strip()
+            if line == "ok loaded-fen":
+                return
+            if line.startswith("error"):
+                raise RuntimeError("cli refused fen: %s" % line)
+        raise RuntimeError("loadfen got no verdict")
+
     def play(self, uci):
         """Play a move; returns True iff accepted (`ok`)."""
         self.proc.stdin.write("play %s\n" % uci)

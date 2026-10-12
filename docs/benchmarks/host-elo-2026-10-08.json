@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-08",
+  "commit": "b119fe6",
+  "opponent": "Stockfish 17.1 (Ubuntu stockfish 17-1), 1 thread, 16 MiB hash, 0.2 s/move",
+  "games_total": 430,
+  "aborts": 0,
+  "terminations": {
+    "checkmate": 342,
+    "threefold_claim": 63,
+    "ply_cap_200": 24,
+    "insufficient_material": 1
+  },
+  "elo_scale": "Stockfish 17.1 skill-to-Elo (CCRL blitz); not Chess.com or human rating",
+  "configs": [
+    {
+      "id": "easy-500k-d6-rand15",
+      "label": "Easy (500k nodes, depth 6, 15% random non-best legal)",
+      "skill": 0,
+      "n": 100,
+      "w_d_l": [30, 24, 46],
+      "score_pct": 42.0,
+      "elo_ccrl": 1291,
+      "elo_ccrl_ci95": [1228, 1350]
+    },
+    {
+      "id": "cli-default-200k-d4",
+      "label": "CLI default (200k nodes, depth 4)",
+      "skill": 0,
+      "n": 100,
+      "w_d_l": [76, 17, 7],
+      "score_pct": 84.5,
+      "elo_ccrl": 1641,
+      "elo_ccrl_ci95": [1574, 1735]
+    },
+    {
+      "id": "cli-default-200k-d4",
+      "label": "CLI default (200k nodes, depth 4)",
+      "skill": 3,
+      "n": 50,
+      "w_d_l": [11, 11, 28],
+      "score_pct": 33.0,
+      "elo_ccrl": 1606,
+      "elo_ccrl_ci95": [1506, 1689]
+    },
+    {
+      "id": "normal-docproxy-1M-d8",
+      "label": "Normal host stand-in (1M nodes, depth 8; firmware uses 5M/8)",
+      "skill": 0,
+      "n": 60,
+      "w_d_l": [48, 10, 2],
+      "score_pct": 88.3,
+      "elo_ccrl": 1698,
+      "elo_ccrl_ci95": [1611, 1844]
+    },
+    {
+      "id": "normal-docproxy-1M-d8",
+      "label": "Normal host stand-in (1M nodes, depth 8)",
+      "skill": 3,
+      "n": 40,
+      "w_d_l": [12, 7, 21],
+      "score_pct": 38.8,
+      "elo_ccrl": 1649,
+      "elo_ccrl_ci95": [1539, 1746]
+    },
+    {
+      "id": "hard-docproxy-4M-d12",
+      "label": "Hard host stand-in (4M nodes, depth 12; firmware uses 20M/12)",
+      "skill": 0,
+      "n": 50,
+      "w_d_l": [41, 8, 1],
+      "score_pct": 90.0,
+      "elo_ccrl": 1729,
+      "elo_ccrl_ci95": [1632, 1908]
+    },
+    {
+      "id": "hard-docproxy-4M-d12",
+      "label": "Hard host stand-in (4M nodes, depth 12)",
+      "skill": 3,
+      "n": 30,
+      "w_d_l": [12, 11, 7],
+      "score_pct": 58.3,
+      "elo_ccrl": 1787,
+      "elo_ccrl_ci95": [1690, 1895]
+    }
+  ],
+  "summary_bands_ccrl": {
+    "easy": 1290,
+    "cli_default": 1625,
+    "normal_stand_in": 1670,
+    "hard_stand_in": 1755
+  },
+  "notes": "Deterministic engine (typically 1.c3). Easy randomness emulated in batch driver; CLI ai has no Easy mode yet. Device strength NOT RUN."
+}
