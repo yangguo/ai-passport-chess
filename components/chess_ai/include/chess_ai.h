@@ -63,10 +63,10 @@ typedef struct chess_ai_job {
     chess_ai_outcome outcome;
     uint64_t result_generation;
     /* Internal callback bookkeeping (do not touch). */
-    uint32_t started_at_ms;
-    uint32_t deadline_at_ms;
+    uint64_t started_at_ms;
+    uint64_t deadline_at_ms;
     uint32_t callback_count;
-    uint32_t last_yield_ms;
+    uint64_t last_yield_ms;
 } chess_ai_job;
 
 #define CHESS_AI_EASY_RANDOM_PCT 15u
